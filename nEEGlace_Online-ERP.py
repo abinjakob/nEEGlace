@@ -4,8 +4,9 @@ Created on Mon Feb 12 19:32:51 2024
 
 Online ERP Calculation for nEEGlace 
 -----------------------------------
-the code detects the EEG LSL live stream, calculates the ERP based on epochs created 
-based on the sound triggers from channel 8 and plot the ERPs in real-time.
+This script detects the EEG LSL live stream, continuously collects data,calculates 
+the ERP for epochs created based on the sound triggers from channel 8 and plot the 
+ERPs in real-time.
 
 @author: Abin Jacob
          Carl von Ossietzky University Oldenburg
@@ -39,7 +40,7 @@ trigger_threshold = 0.5
 # printing status message
 print("Looking for an EEG stream...")
 
-# resolve EEG stream using LSL
+# resolve and initialise EEG stream using LSL
 streams = resolve_stream('type', 'EEG')  
 inlet = StreamInlet(streams[0])
 
@@ -50,7 +51,7 @@ buffer = np.zeros((epoch_samples, 7))
 epochs = []  
 
 
-# function to process incoming data
+# function to process incoming data, detect triggers and storing epochs 
 def process_data():
     global buffer, epochs
     sample, timestamp = inlet.pull_sample()
@@ -64,7 +65,7 @@ def process_data():
         # append the new epoch to the epochs list
         epochs.append(buffer.copy())  
         
-# function for data aggregation and calculating erp
+# function to calculate erp based on stored epochs
 def update_average():
     # checking if the epochs contain data
     if epochs:
@@ -101,7 +102,7 @@ plt.show()
 
 
 # Real-Time Data Processing
-# using thread for concurrenttly run process_data() to check for new data and 
+# using thread to concurrently run process_data() to check for new data and 
 # to detect the triggers 
 
 # function for real-time data processing 
