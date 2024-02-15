@@ -8,10 +8,6 @@ This script detects the EEG LSL live stream, continuously collects data,calculat
 the ERP for epochs created based on the sound triggers from channel 8 and plot the 
 ERPs in real-time.
 
-In V2:
-    - added separate subplot for plotting triggers 
-    - high-pass filtering for correcting dc offset
-
 @author: Abin Jacob
          Carl von Ossietzky University Oldenburg
          abin.jacob@uni-oldenburg.de
