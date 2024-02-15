@@ -24,6 +24,8 @@ from matplotlib.animation import FuncAnimation
 import threading
 # for LSL communication
 from pylsl import StreamInlet, resolve_stream
+# for high-pass filter
+from scipy.signal import butter, filtfilt 
 
 
 # SET PARAMS -----------------------------------------
@@ -37,8 +39,7 @@ trigger_channel = 7
 
 # high-pass filter to correct the dc offset
 hp = 0.3
-hp_order = 10
-
+hp_order = 4
 # ----------------------------------------------------
 
 
@@ -65,6 +66,20 @@ triggers = []
 epochs = []  
 
 
+# function to design high-pass filter 
+def butter_highpass(cutoff, fs, order= 5):
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype= 'high', analog= False)
+    return b,a
+
+# function to apply high-pass filter to signal
+def highpass_filter(data, cutoff, fs, order= 5):
+    b, a = butter_highpass(cutoff, fs, order= order)
+    padlen = max(len(data) // 2 - 1, 0)
+    filtered_data = filtfilt(b, a, data, padlen=padlen)
+    return filtered_data
+
 # function to process incoming data, detect triggers and storing epochs 
 def process_data():
     global buffer, epochs, triggers
@@ -77,7 +92,9 @@ def process_data():
         for i in range(epoch_samples):
             sample, timestamp = inlet.pull_sample()
             # store EEG data for the current epoch 
-            buffer[i, :] = sample[:nbchans] 
+            raw_eeg = sample[:nbchans]
+            filtered_eeg = highpass_filter(raw_eeg, hp, sampling_rate, hp_order)
+            buffer[i, :] = filtered_eeg 
             # store trigger for the current epoch
             trigger_buffer[i] = sample[tidx]
         # append the new epoch to the epochs list
@@ -103,9 +120,15 @@ def init():
     # for erp plot
     ax1.set_xlim(0, epoch_samples)
     ax1.set_ylim(-100, 100)
+    ax1.set_title('ERP')
+    ax1.set_xlabel('time')
+    ax1.set_ylabel('amplitude (mV)')
     # for trigger plot
     ax2.set_xlim(0, epoch_samples)
-    ax2.set_ylim(-0.1, 1.1)
+    ax2.set_ylim(-0.1, 10)
+    ax2.set_title('Sound Triggers')
+    ax2.set_xlabel('time')
+    ax2.set_ylabel('amplitude (mV)')
     return ax1, ax2
 
 # function to update plot
@@ -149,6 +172,9 @@ thread = threading.Thread(target=data_collection_loop)
 # daemonise thread
 thread.daemon = True  
 thread.start()
+
+# showing plot with real-time updating
+plt.show()
 
 # showing plot with real-time updating
 plt.show()
