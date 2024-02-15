@@ -28,6 +28,7 @@ from pylsl import StreamInlet, resolve_stream
 
 # SET PARAMS -----------------------------------------
 
+# sampling rate
 sampling_rate = 500 
 # duration of the epoch 
 epoch_duration = 0.8
