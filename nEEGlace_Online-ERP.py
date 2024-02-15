@@ -8,6 +8,10 @@ This script detects the EEG LSL live stream, continuously collects data,calculat
 the ERP for epochs created based on the sound triggers from channel 8 and plot the 
 ERPs in real-time.
 
+In V2:
+    - added separate subplot for plotting triggers 
+    - high-pass filtering for correcting dc offset
+
 @author: Abin Jacob
          Carl von Ossietzky University Oldenburg
          abin.jacob@uni-oldenburg.de
@@ -35,6 +39,9 @@ trigger_threshold = 0.5
 # trigger channel in the stream (must be always the last channel)
 trigger_channel = 7
 
+# high-pass filter to correct the dc offset
+hp = 0.3
+hp_order = 10
 
 # ----------------------------------------------------
 
@@ -56,22 +63,31 @@ nbchans = tidx
 epoch_samples = int(sampling_rate * epoch_duration)
 # to temporarily store the eeg data for the current epoch
 buffer = np.zeros((epoch_samples, nbchans)) 
+# to store the sound triggers 
+triggers = [] 
+# to store all epochs  
 epochs = []  
 
 
 # function to process incoming data, detect triggers and storing epochs 
 def process_data():
-    global buffer, epochs
+    global buffer, epochs, triggers
     sample, timestamp = inlet.pull_sample()
     # checking if trigger channel indicates an event
     if sample[tidx] > trigger_threshold:  
         print("Audio event detected. Collecting data...")
+        # initialising to store triggers temporarily
+        trigger_buffer = np.zeros(epoch_samples)
         for i in range(epoch_samples):
             sample, timestamp = inlet.pull_sample()
-            # store EEG data for the current 
+            # store EEG data for the current epoch 
             buffer[i, :] = sample[:nbchans] 
+            # store trigger for the current epoch
+            trigger_buffer[i] = sample[tidx]
         # append the new epoch to the epochs list
         epochs.append(buffer.copy())  
+        # append the new trigger to the trigger list
+        triggers.append(trigger_buffer.copy())
         
 # function to calculate erp based on stored epochs
 def update_average():
@@ -84,24 +100,35 @@ def update_average():
         return None
     
 # setting up Matplotlib for real-time plotting
-fig, ax = plt.subplots()
+fig, (ax1, ax2) = plt.subplots(2, 1, gridspec_kw = {'height_ratios': [3,1]})
 
 # function to initialise plot
 def init():
-    ax.set_xlim(0, epoch_samples)
-    ax.set_ylim(-100, 100)  
-    return ax,
+    # for erp plot
+    ax1.set_xlim(0, epoch_samples)
+    ax1.set_ylim(-100, 100)
+    # for trigger plot
+    ax2.set_xlim(0, epoch_samples)
+    ax2.set_ylim(-0.1, 1.1)
+    return ax1, ax2
 
 # function to update plot
 def update(frame):
     average_epoch = update_average()
     if average_epoch is not None:
-        ax.clear()
+        ax1.clear()
+        ax2.clear()     
+        # plotting ERP
         # loop over channels (except the trigger channel)
         for i in range(nbchans):  
-            ax.plot(average_epoch[:, i], label=f'Channel {i+1}', linewidth=0.5)
+            ax1.plot(average_epoch[:, i], label=f'Channel {i+1}', linewidth=0.5)
         # ax.legend()
-    return ax,
+        # plotting triggers 
+        # checking if the trigger contain data
+        if triggers:  
+            latest_trigger = triggers[-1]
+            ax2.plot(latest_trigger, label= 'Trigger', color='r', linewidth=0.5)
+    return ax1, ax2
 
 # create animation using FuncAnimation
 # frame data caching is disabled for the animation
