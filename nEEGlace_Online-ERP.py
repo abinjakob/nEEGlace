@@ -28,27 +28,34 @@ from pylsl import StreamInlet, resolve_stream
 
 # SET PARAMS -----------------------------------------
 
-# sampling rate
-sampling_rate = 500 
 # duration of the epoch 
 epoch_duration = 0.8
 # threshold of the audio trigger signal at channel 8
 trigger_threshold = 0.5
+# trigger channel in the stream (must be always the last channel)
+trigger_channel = 7
+
 
 # ----------------------------------------------------
 
 
 # printing status message
 print("Looking for an EEG stream...")
-
 # resolve and initialise EEG stream using LSL
 streams = resolve_stream('type', 'EEG')  
 inlet = StreamInlet(streams[0])
+# retriving sampling rate from stream info
+sampling_rate = inlet.info().nominal_srate()
+print(f'Sampling rate: {sampling_rate}')
 
+# channel index of the trigger
+tidx = trigger_channel-1
+# total number of channels 
+nbchans = tidx 
 # time points in single epoch 
 epoch_samples = int(sampling_rate * epoch_duration)
 # to temporarily store the eeg data for the current epoch
-buffer = np.zeros((epoch_samples, 7)) 
+buffer = np.zeros((epoch_samples, nbchans)) 
 epochs = []  
 
 
@@ -57,12 +64,12 @@ def process_data():
     global buffer, epochs
     sample, timestamp = inlet.pull_sample()
     # checking if trigger channel indicates an event
-    if sample[7] > trigger_threshold:  
+    if sample[tidx] > trigger_threshold:  
         print("Audio event detected. Collecting data...")
         for i in range(epoch_samples):
             sample, timestamp = inlet.pull_sample()
             # store EEG data for the current 
-            buffer[i, :] = sample[:7] 
+            buffer[i, :] = sample[:nbchans] 
         # append the new epoch to the epochs list
         epochs.append(buffer.copy())  
         
@@ -91,7 +98,7 @@ def update(frame):
     if average_epoch is not None:
         ax.clear()
         # loop over channels (except the trigger channel)
-        for i in range(7):  
+        for i in range(nbchans):  
             ax.plot(average_epoch[:, i], label=f'Channel {i+1}', linewidth=0.5)
         # ax.legend()
     return ax,
