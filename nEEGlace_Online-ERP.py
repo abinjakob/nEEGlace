@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Mon Feb 12 19:32:51 2024
@@ -32,6 +33,8 @@ from scipy.signal import butter, filtfilt
 
 # duration of the epoch 
 epoch_duration = 0.8
+# max epochs to compute ERP
+maxTrials = 40
 # threshold of the audio trigger signal at channel 8
 trigger_threshold = 0.5
 # trigger channel in the stream (must be always the last channel)
@@ -97,6 +100,11 @@ def process_data():
             buffer[i, :] = filtered_eeg 
             # store trigger for the current epoch
             trigger_buffer[i] = sample[tidx]
+        # ensure epochs does not exceed maxTrials
+        if len(epochs) >= maxTrials:
+            epochs.pop(0)                               # deleting the old epochs     
+        if len(triggers) >= maxTrials:
+            triggers.pop(0)                             # deleting the old triggers    
         # append the new epoch to the epochs list
         epochs.append(buffer.copy())  
         # append the new trigger to the trigger list
@@ -178,4 +186,3 @@ plt.show()
 
 # showing plot with real-time updating
 plt.show()
-
