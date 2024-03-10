@@ -37,12 +37,20 @@ epoch_duration = 0.8
 maxTrials = 40
 # threshold of the audio trigger signal at channel 8
 trigger_threshold = 0.5
-# trigger channel in the stream (must be always the last channel)
+# trigger channel in the stream (must be always the last chasnnel)
 trigger_channel = 7
 
 # high-pass filter to correct the dc offset
 hp = 0.3
 hp_order = 4
+
+
+# TO CALCULATE AVERAGE ERP OF SELECTED CHANNELS 
+# channel to calculate average ERP                          -- (leave 'chan2sel' empty to calculate ERP for all channels separately)
+chan2sel = []    
+# subtract avg ERP of certain channels from chan2sel        -- (leave 'chan2diff' empty to calculate average ERP of 'chan2sel')
+chan2diff = []            
+
 # ----------------------------------------------------
 
 
@@ -57,6 +65,9 @@ print(f'Sampling rate: {sampling_rate}')
 
 # channel index of the trigger
 tidx = trigger_channel-1
+# channel index of chan2sel and chan2diff
+chan2sel = [x - 1 for x in chan2sel]
+chan2diff = [y - 1 for y in chan2diff]
 # total number of channels 
 nbchans = tidx 
 # time points in single epoch 
@@ -114,8 +125,14 @@ def process_data():
 def update_average():
     # checking if the epochs contain data
     if epochs:
-        # calculating ERP using the data stored in epochs 
-        average_epoch = np.mean(np.array(epochs), axis=0)
+        if chan2sel:
+            if chan2diff:
+                average_epoch = np.mean(np.mean(np.array(epochs)[:,:,chan2sel], axis=0), axis=1) - np.mean(np.mean(np.array(epochs)[:,:,chan2diff], axis=0), axis=1)
+            else:
+                average_epoch = np.mean(np.mean(np.array(epochs)[:,:,chan2sel], axis=0), axis=1)
+        else:
+            # calculating ERP using the data stored in epochs 
+            average_epoch = np.mean(np.array(epochs), axis=0)
         return average_epoch
     else:
         return None
@@ -147,9 +164,12 @@ def update(frame):
         ax2.clear()     
         # plotting ERP
         # loop over channels (except the trigger channel)
-        for i in range(nbchans):  
-            ax1.plot(average_epoch[:, i], label=f'Channel {i+1}', linewidth=0.5)
-        # ax.legend()
+        if chan2sel:
+            ax1.plot(average_epoch, linewidth=0.5)
+        else:    
+            for i in range(average_epoch.shape[1]):  
+                ax1.plot(average_epoch[:, i], label=f'Channel {i+1}', linewidth=0.5)
+            # ax1.legend()
         # plotting triggers 
         # checking if the trigger contain data
         if triggers:  
