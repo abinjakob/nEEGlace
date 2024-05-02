@@ -69,4 +69,54 @@ plt.tight_layout()
 plt.show()
 
 
+#%%
+
+import numpy as np
+import matplotlib.pyplot as plt
+from pylsl import StreamInlet, resolve_stream
+
+# Resolve EEG stream
+print("Looking for an EEG stream...")
+streams = resolve_stream('type', 'EEG')
+inlet = StreamInlet(streams[0])
+
+# Number of channels
+num_channels = inlet.channel_count
+
+# Create a figure and axis objects for plotting
+plt.ion()
+fig, ax = plt.subplots(num_channels, 1, figsize=(10, 6))
+
+# Initialize plot lines
+lines = []
+for i in range(num_channels):
+    line, = ax[i].plot([], [], lw=2)
+    lines.append(line)
+    # ax[i].set_ylim(-500, 500)  # Adjust y-limit as per your data range
+
+# Function to update plot
+def update_plot(new_sample):
+    for i in range(num_channels):
+        lines[i].set_data(range(len(new_sample)), new_sample)
+
+    # Adjust plot limits if necessary
+    for i in range(num_channels):
+        ax[i].relim()
+        ax[i].autoscale_view()
+
+    # Redraw
+    fig.canvas.draw()
+    fig.canvas.flush_events()
+
+# Main loop
+while True:
+    # Get new sample
+    sample, timestamp = inlet.pull_sample()
+    sample = np.array(sample)  # Convert sample to numpy array
+
+    # Plot the new sample
+    update_plot(sample)
+
+
+
 
