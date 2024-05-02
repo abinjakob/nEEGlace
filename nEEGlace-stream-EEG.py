@@ -25,98 +25,43 @@ print("Looking for an EEG stream...")
 # resolve and initialise EEG stream using LSL
 streams = resolve_stream('type', 'EEG')  
 inlet = StreamInlet(streams[0])
-print('EEG Stream Found...')
 # retriving info from stream info
 nchans = inlet.info().channel_count()
 fs = inlet.info().nominal_srate()
+# printing status message
+print('EEG Stream Found...')
 print('Stream Info:')
 print(f'Channels: {nchans}, Sampling rate: {fs}')
 
-maxsamples = int(10 * fs)
+# initialise figure window
+fig, axes = plt.subplots(nchans, 1, figsize=(10, 6))
+# time window to display in the plot (in ms)
+timewindow = 10 
+# converting to samples 
+timesamples = int(timewindow * fs)
+# to store EEG data for each channel
+eegdata = np.zeros((timesamples, nchans))
 
-
-fig, axes = plt.subplots(nchans, 1, figsize=(10, 2*nchans))
+# initialize plot lines
 lines = []
-data = []
-
-# Initialize lines and data structures
-for ax in axes:
-    line, = ax.plot([], [], lw=2)
+for i, ax in enumerate(axes):
+    line, = ax.plot(np.linspace(0, timewindow, timesamples), np.zeros(timesamples), lw= 1)
     lines.append(line)
-    ax.set_xlim(0, 10)
-    ax.set_ylim(-1, 1)  # Modify the limits based on expected EEG signal ranges
-    data.append([])
+    ax.set_xlim(0, timewindow)
+    ax.set_ylim(-500, 500)  
 
-def init():
-    for line in lines:
-        line.set_data([], [])
-    return lines
-
-def update(frame):
+# function to update plot
+def updatePlot(frame):
+    global eegdata
+    # get new sample
     sample, timestamp = inlet.pull_sample()
-    for i in range(nchans):
-        data[i].append(sample[i])
-        if len(data[i]) > 100:  # Keep only the last 100 samples
-            data[i].pop(0)
-    timestamps = [timestamp - (len(data[0]) - i) * fs for i in range(len(data[0]))]  # Assuming 100 Hz sampling
-    for j, line in enumerate(lines):
-        line.set_data(timestamps, data[j])
-        axes[j].set_xlim(timestamps[0], timestamps[-1])
+    if sample:
+        eegdata = np.roll(eegdata, -1, axis= 0)
+        eegdata[-1, :] = sample
+    for i, line in enumerate(lines):
+        line.set_ydata(eegdata[:, i])
     return lines
 
-ani = FuncAnimation(fig, update, init_func=init, blit=True, interval=50)
-plt.tight_layout()
+# plotting 
+ani = FuncAnimation(fig, updatePlot, blit= True, interval= 1)
 plt.show()
-
-
-#%%
-
-import numpy as np
-import matplotlib.pyplot as plt
-from pylsl import StreamInlet, resolve_stream
-
-# Resolve EEG stream
-print("Looking for an EEG stream...")
-streams = resolve_stream('type', 'EEG')
-inlet = StreamInlet(streams[0])
-
-# Number of channels
-num_channels = inlet.channel_count
-
-# Create a figure and axis objects for plotting
-plt.ion()
-fig, ax = plt.subplots(num_channels, 1, figsize=(10, 6))
-
-# Initialize plot lines
-lines = []
-for i in range(num_channels):
-    line, = ax[i].plot([], [], lw=2)
-    lines.append(line)
-    # ax[i].set_ylim(-500, 500)  # Adjust y-limit as per your data range
-
-# Function to update plot
-def update_plot(new_sample):
-    for i in range(num_channels):
-        lines[i].set_data(range(len(new_sample)), new_sample)
-
-    # Adjust plot limits if necessary
-    for i in range(num_channels):
-        ax[i].relim()
-        ax[i].autoscale_view()
-
-    # Redraw
-    fig.canvas.draw()
-    fig.canvas.flush_events()
-
-# Main loop
-while True:
-    # Get new sample
-    sample, timestamp = inlet.pull_sample()
-    sample = np.array(sample)  # Convert sample to numpy array
-
-    # Plot the new sample
-    update_plot(sample)
-
-
-
-
