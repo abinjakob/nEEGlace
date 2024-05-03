@@ -1,18 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Wed May  1 16:59:39 2024
-
-Real-time streaming of EEG from nEEGlace 
-----------------------------------------
-This script detects the EEG LSL live stream, continuously collects data, and streams
-the EEG signal from all the channels. 
-
-@author: Abin Jacob
-         Carl von Ossietzky University Oldenburg
-         abin.jacob@uni-oldenburg.de
-"""
-
 # libraries 
 import numpy as np
 import matplotlib.pyplot as plt
