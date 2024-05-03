@@ -1,3 +1,21 @@
+#!/usr/bin/env python
+"""
+Created on Wed May  3 16:59:39 2024
+
+Real-time streaming of EEG from nEEGlace 
+----------------------------------------
+This script detects the EEG LSL live stream, continuously collects data, and streams
+the EEG signal from all the channels. 
+
+The script is orginally from the LabStreamingLayers Github example ReceiveAndPlot.py
+https://github.com/labstreaminglayer/pylsl/blob/master/pylsl/examples/ReceiveAndPlot.py
+
+Modified By: Abin Jacob
+             Carl von Ossietzky University Oldenburg
+             abin.jacob@uni-oldenburg.de
+"""
+
+# libraries
 import numpy as np
 import math
 import pylsl
