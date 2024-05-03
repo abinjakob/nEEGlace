@@ -143,12 +143,9 @@ def main():
     pullTimer.timeout.connect(update)
     pullTimer.start(pullInterval)
 
-    
-
     # Start Qt event loop unless running in interactive mode or using pyside.
     if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
         QApplication.instance().exec_()
-
-
+        
 if __name__ == '__main__':
     main()
