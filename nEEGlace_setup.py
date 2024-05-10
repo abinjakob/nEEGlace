@@ -1,208 +1,113 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Feb 12 19:32:51 2024
+Created on Thu May  9 10:58:31 2024
 
-Online ERP Calculation for nEEGlace 
------------------------------------
-This script detects the EEG LSL live stream, continuously collects data,calculates 
-the ERP for epochs created based on the sound triggers from channel 8 and plot the 
-ERPs in real-time.
+nEEGLace setup
+--------------
+This script is used to make the setting up of nEEGlace smoother. The script guides
+the user through the start up procedures, detect any issue and also to test the 
+audio streams are working as expected. 
 
 @author: Abin Jacob
          Carl von Ossietzky University Oldenburg
          abin.jacob@uni-oldenburg.de
 """
 
-# libraries
+# libraries 
 import numpy as np
-import matplotlib.pyplot as plt
+import math
+import pylsl
+import pyqtgraph as pg
+from PyQt5.QtWidgets import QApplication
+from pyqtgraph.Qt import QtCore
+from typing import List
+import sys
+import subprocess
 import time
-
-# using FuncAnimation for real-time visualisation
-from matplotlib.animation import FuncAnimation
-# for concurrent execution
-import threading
-# for LSL communication
-from pylsl import StreamInlet, resolve_stream
-# for high-pass filter
-from scipy.signal import butter, filtfilt 
+# for coloured terminal text
+from colorama import init as colorama_init
+from colorama import Fore, Back, Style
+import logging
 
 
-# SET PARAMS -----------------------------------------
-
-# duration of the epoch 
-epoch_duration = 0.8
-# max epochs to compute ERP
-maxTrials = 40
-# threshold of the audio trigger signal at channel 8
-trigger_threshold = 0.5
-# trigger channel in the stream (must be always the last chasnnel)
-trigger_channel = 7
-
-# high-pass filter to correct the dc offset
-hp = 0.3
-hp_order = 4
-
-
-# TO CALCULATE AVERAGE ERP OF SELECTED CHANNELS 
-# channel to calculate average ERP                          -- (leave 'chan2sel' empty to calculate ERP for all channels separately)
-chan2sel = []    
-# subtract avg ERP of certain channels from chan2sel        -- (leave 'chan2diff' empty to calculate average ERP of 'chan2sel')
-chan2diff = []            
-
-# ----------------------------------------------------
-
-
-# printing status message
-print("Looking for an EEG stream...")
-# resolve and initialise EEG stream using LSL
-streams = resolve_stream('type', 'EEG')  
-inlet = StreamInlet(streams[0])
-# retriving sampling rate from stream info
-sampling_rate = inlet.info().nominal_srate()
-print(f'Sampling rate: {sampling_rate}')
-
-# channel index of the trigger
-tidx = trigger_channel-1
-# channel index of chan2sel and chan2diff
-chan2sel = [x - 1 for x in chan2sel]
-chan2diff = [y - 1 for y in chan2diff]
-# total number of channels 
-nbchans = tidx 
-# time points in single epoch 
-epoch_samples = int(sampling_rate * epoch_duration)
-# to temporarily store the eeg data for the current epoch
-buffer = np.zeros((epoch_samples, nbchans)) 
-# to store the sound triggers 
-triggers = [] 
-# to store all epochs  
-epochs = []  
-
-
-# function to design high-pass filter 
-def butter_highpass(cutoff, fs, order= 5):
-    nyq = 0.5 * fs
-    normal_cutoff = cutoff / nyq
-    b, a = butter(order, normal_cutoff, btype= 'high', analog= False)
-    return b,a
-
-# function to apply high-pass filter to signal
-def highpass_filter(data, cutoff, fs, order= 5):
-    b, a = butter_highpass(cutoff, fs, order= order)
-    padlen = max(len(data) // 2 - 1, 0)
-    filtered_data = filtfilt(b, a, data, padlen=padlen)
-    return filtered_data
-
-# function to process incoming data, detect triggers and storing epochs 
-def process_data():
-    global buffer, epochs, triggers
-    sample, timestamp = inlet.pull_sample()
-    # checking if trigger channel indicates an event
-    if sample[tidx] > trigger_threshold:  
-        print("Audio event detected. Collecting data...")
-        # initialising to store triggers temporarily
-        trigger_buffer = np.zeros(epoch_samples)
-        for i in range(epoch_samples):
-            sample, timestamp = inlet.pull_sample()
-            # store EEG data for the current epoch 
-            raw_eeg = sample[:nbchans]
-            filtered_eeg = highpass_filter(raw_eeg, hp, sampling_rate, hp_order)
-            buffer[i, :] = filtered_eeg 
-            # store trigger for the current epoch
-            trigger_buffer[i] = sample[tidx]
-        # ensure epochs does not exceed maxTrials
-        if len(epochs) >= maxTrials:
-            epochs.pop(0)                               # deleting the old epochs     
-        if len(triggers) >= maxTrials:
-            triggers.pop(0)                             # deleting the old triggers    
-        # append the new epoch to the epochs list
-        epochs.append(buffer.copy())  
-        # append the new trigger to the trigger list
-        triggers.append(trigger_buffer.copy())
-        
-# function to calculate erp based on stored epochs
-def update_average():
-    # checking if the epochs contain data
-    if epochs:
-        if chan2sel:
-            if chan2diff:
-                average_epoch = np.mean(np.mean(np.array(epochs)[:,:,chan2sel], axis=0), axis=1) - np.mean(np.mean(np.array(epochs)[:,:,chan2diff], axis=0), axis=1)
-            else:
-                average_epoch = np.mean(np.mean(np.array(epochs)[:,:,chan2sel], axis=0), axis=1)
-        else:
-            # calculating ERP using the data stored in epochs 
-            average_epoch = np.mean(np.array(epochs), axis=0)
-        return average_epoch
+# creating a welcome message 
+print('\n-------------------------')
+print('Welcome to nEEGlace setup')
+print('-------------------------')
+time.sleep(2)
+# turn on the battery
+print(f'\n{Back.WHITE}Step 1:{Style.RESET_ALL}\nPlease turn on nEEGlace by fliping the switch on the right side')
+# check if it is on
+count = 0
+while count<3:
+    time.sleep(1)
+    userinput = input('\nCan you see a red light next to the switch? [Y/N]:')
+    if userinput.lower() == 'n':
+        time.sleep(1)
+        print(f'{Back.YELLOW}Low Battery! Please try again after charging the battery.{Style.RESET_ALL}')
+        sys.exit()
+    elif userinput.lower() == 'y':
+        time.sleep(1)
+        print(f'{Back.GREEN}nEEGlace is ON{Style.RESET_ALL}')
+        break
     else:
-        return None
+        print('Wrong input. Press Y for yes and N for no')
+        count +=1
+else:
+    print('Program ended...')
+    sys.exit()
     
-# setting up Matplotlib for real-time plotting
-fig, (ax1, ax2) = plt.subplots(2, 1, gridspec_kw = {'height_ratios': [3,1]})
 
-# function to initialise plot
-def init():
-    # for erp plot
-    ax1.set_xlim(0, epoch_samples)
-    ax1.set_ylim(-100, 100)
-    ax1.set_title('ERP')
-    ax1.set_xlabel('time')
-    ax1.set_ylabel('amplitude (mV)')
-    # for trigger plot
-    ax2.set_xlim(0, epoch_samples)
-    ax2.set_ylim(-0.1, 10)
-    ax2.set_title('Sound Triggers')
-    ax2.set_xlabel('time')
-    ax2.set_ylabel('amplitude (mV)')
-    return ax1, ax2
+time.sleep(2)
+# turn on the amp
+print(f'\n{Back.WHITE}Step 2:{Style.RESET_ALL}\nPlease turn on the Amplifier by pressing the button on the top left of the nEEGlace')
+# check if is on
+count = 0
+ampstate = 0 
+while count < 5:
+    time.sleep(1)
+    print('\nWhat blinking light do you see on the amp?')
+    print(f'1. {Back.BLUE}Blue{Style.RESET_ALL}, 2. {Back.GREEN}Green{Style.RESET_ALL}, 3. {Back.MAGENTA}Pink{Style.RESET_ALL}')
+    userinput = input('Enter color? [1/2/3]:')
+    if userinput == '1':
+        # amp is advertising
+        time.sleep(1)
+        print(f'{Back.BLUE}nEEGlace is streaming signal{Style.RESET_ALL}')
+        ampstate = 1
+        break
+    elif userinput == '2':
+        time.sleep(1)
+        # amp is in offline mode 
+        print('nEEGlace is in offline mode. Press the button twice to make it online')
+        count +=1
+    elif userinput == '3':
+        time.sleep(1)
+        # amp is booting up
+        print('Wait for sometime until it turns blue')
+        count +=1
+    else:
+        print('Wrong input. Press 1, 2 or 3')
+        count +=1     
+else:
+    print('Program ended...')
+    sys.exit()
 
-# function to update plot
-def update(frame):
-    average_epoch = update_average()
-    if average_epoch is not None:
-        ax1.clear()
-        ax2.clear()     
-        # plotting ERP
-        # loop over channels (except the trigger channel)
-        if chan2sel:
-            ax1.plot(average_epoch, linewidth=0.5)
-        else:    
-            for i in range(average_epoch.shape[1]):  
-                ax1.plot(average_epoch[:, i], label=f'Channel {i+1}', linewidth=0.5)
-            # ax1.legend()
-        # plotting triggers 
-        # checking if the trigger contain data
-        if triggers:  
-            latest_trigger = triggers[-1]
-            ax2.plot(latest_trigger, label= 'Trigger', color='r', linewidth=0.5)
-    return ax1, ax2
-
-# create animation using FuncAnimation
-# frame data caching is disabled for the animation
-ani = FuncAnimation(fig, update, init_func=init, blit=True, interval=100, cache_frame_data=False)
-plt.show()
-
-
-# Real-Time Data Processing
-# using thread to concurrently run process_data() to check for new data and 
-# to detect the triggers 
-
-# function for real-time data processing 
-def data_collection_loop():
-    while True:
-        # check for new data and process it
-        process_data()
-        # to ensure data is processed in alignment with the sampling rate
-        time.sleep(1/sampling_rate)  
-
-# starting data collection in a separate thread
-thread = threading.Thread(target=data_collection_loop)
-# daemonise thread
-thread.daemon = True  
-thread.start()
-
-# showing plot with real-time updating
-plt.show()
-
-# showing plot with real-time updating
-plt.show()
+# if amp is on and advertising
+if ampstate == 1:
+    try:
+        # Start the subprocess and capture its standard output and error
+        process = subprocess.Popen('explorepy push2lsl -n Explore_84D1', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Wait for the process to finish
+        process.wait()
+        
+        # Read the standard error output
+        error_output = process.stderr.read().decode('utf-8')
+        
+        if error_output:
+            # If there's an error, print it
+            print(error_output)
+        else:
+            print('Pushing stream to LSL...')
+    except Exception as e:
+        # If any other exception occurs, print it
+        print(f'Error: {e}')
