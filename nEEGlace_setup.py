@@ -27,6 +27,7 @@ import time
 # for coloured terminal text
 from colorama import init as colorama_init
 from colorama import Fore, Back, Style
+import logging
 
 
 # creating a welcome message 
@@ -93,7 +94,10 @@ else:
 
 # if amp is on and advertising 
 if ampstate == 1:
-    # push the stream to LSL (push2lsl is run in a new console)
-    subprocess.Popen('start cmd /k explorepy push2lsl -n Explore_84D1', shell= True)
-    time.sleep(2)
-    print('Pushing stream to LSL.......')
+    try:
+        # push the stream to LSL (push2lsl is run in a new console)
+        subprocess.Popen('start cmd /k explorepy push2lsl -n Explore_84D1', shell=True)
+        time.sleep(2)
+        logging.info('Pushing stream to LSL...')
+    except Exception as e:
+        logging.error(f'Error: {e}')
