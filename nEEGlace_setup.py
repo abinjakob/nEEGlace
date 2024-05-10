@@ -97,37 +97,35 @@ else:
     print('Program ended...')
     sys.exit()
 
-# common errors with push2lsl
+# common outputs of push2lsl
 errstr1 = 'not recognized as an internal or external command'
 errstr2 = 'DeviceNotFoundError'
+successtr = 'Device info packet has been received. Connection has been established. Streaming...'
+isConnected = False
 
 # if amp is on and advertising
-if ampstate == 1:
-    try:
-        print('Connecting.... Please wait')
-        # starting subprocess for push2lsl  
-        # also capturing its standard output and error
-        process = subprocess.Popen('explorepy push2lsl -n Explore_84D1', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # waiting for the process to finish
-        process.wait()
-        
-        # reading the error output
-        errorOut = process.stderr.read().decode('utf-8')
-        
-        if errorOut:
-            print(errorOut)
-            if errstr1 in errorOut:
+try:
+    print('Connecting.... Please wait')
+    # starting subprocess for push2lsl 
+    # also capturing its standard output and error
+    with subprocess.Popen('explorepy push2lsl -n Explore_84D1', shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, text=True, universal_newlines=True) as proc:
+        # continuously monitoring the output of subprocess
+        for line in proc.stdout:  
+            # checking if connection is made
+            if successtr in line:
+                print(f'nEEGlace is connected and streaming{Style.RESET_ALL}')
+                isConnected = True
+                break
+            # checking for error messages
+            if errstr1 in line:
                 print(f'{Back.RED}ExplorePy is not installed{Style.RESET_ALL}')
                 print('Downlaod from: https://pypi.org/project/explorepy/')
                 sys.exit()
-                
-            elif errstr2 in errorOut:
+            if errstr2 in line:
                 print(f'{Back.RED}Unable to connect to nEEGlace{Style.RESET_ALL}')
-                print('Restart the device and try again.')
-                sys.exit()
-        else:
-            print('Pushing to LSL...')
-    except Exception as e:
-        # If any other exception occurs, print it
-        print(f'Error: {e}')
-        sys.exit()
+                print('Restart the Amplifier and long press the button until it is blue and try again.')
+                sys.exit()                
+            if not isConnected:
+                proc.terminate()
+except Exception as e:
+    print(f'An error occurred: {e}')
