@@ -33,7 +33,6 @@ updateInterval = 60
 # interval period of pulling new data (in ms)
 pullInterval = 500
 
-
 # class to represent a plottable inlet
 class Inlet:
     # constructor of Inlet
@@ -57,7 +56,7 @@ class Inlet:
 class DataInlet(Inlet):
     dtypes = [[], np.float32, np.float64, None, np.int32, np.int16, np.int8, np.int64]    
     # constructor of DataInlet
-    def __init__(self, info: pylsl.StreamInfo, plt: pg.PlotItem):
+    def __init__(self, info: pylsl.StreamInfo, plt_main: pg.PlotItem, plt_ch7: pg.PlotItem):
         # calling the constructor of the super class
         super().__init__(info)
         # calculating size for buffer
@@ -67,15 +66,18 @@ class DataInlet(Inlet):
         empty = np.array([])
         # creating curve object for each channel that will handle displaying the data
         self.curves = [pg.PlotCurveItem(x=empty, y=empty, autoDownsample=True) for _ in range(self.nchan)]
-        for curve in self.curves:
-            # adding each curve to the plt
-            plt.addItem(curve)
+        for i, curve in enumerate(self.curves):
+            # adding each curve to the appropriate subplot
+            if i == 6:
+                plt_ch7.addItem(curve)
+            else:
+                plt_main.addItem(curve)
     
     # function to pull new data chunks from a data stream, update the data buffer
     # and update the corresponding plots for each channel of data. 
-    def pullPlot(self, plotTime, plt):
+    def pullPlot(self, plotTime, plt_main, plt_ch7):
         # pull new chunk of data from the data stream
-        _, ts = self.inlet.pull_chunk(timeout=0.0, max_samples= self.buffer.shape[0], dest_obj= self.buffer)
+        _, ts = self.inlet.pull_chunk(timeout=0.0, max_samples=self.buffer.shape[0], dest_obj=self.buffer)
         if ts:
             # converting timestamps to numpy
             ts = np.asarray(ts)
@@ -105,10 +107,15 @@ def main():
     # resolving streams
     streams = pylsl.resolve_streams()
 
-    # setting up plot window
-    pw = pg.plot(title='nEEGlace EEG Stream')
-    plt = pw.getPlotItem()
-    plt.enableAutoRange(x=False, y=True)
+    # setting up main plot window with two subplots
+    win = pg.GraphicsLayoutWidget(show=True, title="nEEGlace EEG Stream")
+    win.resize(1000, 600)
+
+    plt_main = win.addPlot(row=0, col=0, title="All Channels except Channel 7")
+    plt_ch7 = win.addPlot(row=1, col=0, title="Channel 7")
+
+    plt_main.enableAutoRange(x=False, y=True)
+    plt_ch7.enableAutoRange(x=False, y=True)
 
     # iterate over found streams, creating specialized inlet objects that will
     # handle plotting the data
@@ -116,7 +123,7 @@ def main():
         if info.nominal_srate() != pylsl.IRREGULAR_RATE \
                 and info.channel_format() != pylsl.cf_string:
             print('Connected to nEEGlace')
-            inlets.append(DataInlet(info, plt))
+            inlets.append(DataInlet(info, plt_main, plt_ch7))
         else:
             print('nEEGlace not detected')
 
@@ -124,14 +131,15 @@ def main():
     def scroll():
         fudgeFactor = pullInterval * .002
         plotTime = pylsl.local_clock()
-        pw.setXRange(plotTime - plotPeriod + fudgeFactor, plotTime - fudgeFactor)
+        plt_main.setXRange(plotTime - plotPeriod + fudgeFactor, plotTime - fudgeFactor)
+        plt_ch7.setXRange(plotTime - plotPeriod + fudgeFactor, plotTime - fudgeFactor)
 
     # function to update the data 
     def update():
         mintime = pylsl.local_clock() - plotPeriod
         # call pullPlot for each inlet.
         for inlet in inlets:
-            inlet.pullPlot(mintime, plt)
+            inlet.pullPlot(mintime, plt_main, plt_ch7)
 
     # create a timer that will move the view every update interval
     updateTimer = QtCore.QTimer()
