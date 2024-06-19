@@ -1,116 +1,245 @@
-/*
- ____  _____ _        _
-| __ )| ____| |      / \
-|  _ \|  _| | |     / _ \
-| |_) | |___| |___ / ___ \
-|____/|_____|_____/_/   \_\
-http://bela.io
-*/
 /**
-\example Audio/record-audio/render.cpp
-
-Recording the audio input and output to file
---------------------------------------------
-
-This example records the inputs and outputs of Bela to an audio file of a fixed length on disk.
-
-When the program begins it will attempt to allocate enough memory to store `gDurationSec`
-seconds of audio data for each of the input and output channels. If you request an excessive
-amount of RAM then the program may fail when starting or while running.
-
-The program processes the input audio and it stores the input samples into the array
-`gInputs[]`. In order to generate something to send to the outputs we apply a filter
-to the input audio and store this as the output samples into the array `gOutputs`.
-
-Åfter running for `gDurationSec` this program will automatically stop and write
-a two `.wav` files to disk. If you have more audio input or output channels then
-these `.wav` files will be multichannel.
-
-These `.wav` files will be created in the Resources section of the Project explorer
-amongst your other project files.
+Audio onset detection using energy of the signal
+-----------------------------------------------
+The script reads audio samples (currently only from one input) into a buffer and 
+for every hopSize it calculates the energy of the buffer. If energy is higher than
+the energyThreshold it activates the digital pin if it is not in the refractory period 
 */
 
 #include <Bela.h>
+#include <cmath>
+#include <vector>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <sstream>
 #include <libraries/AudioFile/AudioFile.h>
 #include <libraries/Biquad/Biquad.h>
-#include <vector>
-#include <string>
 #include <algorithm>
 
-std::vector<std::vector<float>> gInputs;
-std::vector<std::vector<float>> gOutputs;
-std::string gFilenameOutputs = "outputs.wav";
-std::string gFilenameInputs = "inputs.wav";
-const double gDurationSec = 20; // how many seconds to record.
-unsigned int gWrittenFrames = 0; // how many frame have actually been written to gInputs and gOutputs
-std::vector<Biquad> gBiquads; // filters to process the inputs
 
-bool setup(BelaContext *context, void *userData)
-{
-	// pre-allocate all the memory needed to store the audio data
-	unsigned int numFrames = context->audioSampleRate * gDurationSec;
-	gInputs.resize(context->audioInChannels);
-	gOutputs.resize(context->audioOutChannels);
-	// If we have too many channels or too many frames to store, we may run out of RAM and
-	// the program will fail to start.
-	try {
-		for(auto& c : gInputs)
-			c.resize(numFrames);
-		for(auto& c : gOutputs)
-			c.resize(numFrames);
-	} catch (std::exception& e) {
-		fprintf(stderr, "Error while allocating memory. Maybe you are asking to record too many frames and/or too many channels\n");
+// config file 
+const std::string configFilename = "config.txt"; 
+
+// configuration parameters
+int bufferSize = 512; 							// num of samples stored in buffer for energy calculation
+int hopSize = 256;			 					// interval at which buffer is processed
+float refractoryPeriod = 0.5;					// refractory period (sec)
+float activationDuration = 0.05;				// duration to activate the digital output pin after onset detection (sec)
+float inputGain = 55;								// input gain for the microphones 	
+float energyThreshold = 0.2;					// threshold for detecting an onset
+float toneFreq = 200.0;
+
+// state variables
+std::vector<float> audioBuffer(bufferSize, 0.0f);
+int bufferIndex = 0;							// current position in audioBuffer
+int hopCounter = 0;								// to track samples processed since last energy calculation 
+int refractoryPeriodSamples;
+int refractoryCounter = 0;						// to track refractory period
+int timeSinceLastOnset = 0; 					// to track samples since last onset
+int activationDurationSamples;
+int activationCounter = 0;						// to track how long digital output is activated
+const int digitalPin = 0;						// digital pin number to activate
+
+// recording audio variables
+std::vector<std::vector<float>> audioRecorder;	// variable to save
+std::string audioFilename = "audiofile.wav";	// filename to save audio
+double recordAudio = 0;						// recording duration in sec 
+double recordDuration = 20;						// recording duration in sec 
+unsigned int recordingFrames = 0;				// to track the frames recorded
+
+
+// function to read from config file 
+bool readConfig(const std::string& filename){
+	// opening config file 
+	std::ifstream configFile(filename);
+	// throw error if config file cannot be opened 
+	if(!configFile.is_open()){
+		rt_printf("Cannot open the config file");
 		return false;
 	}
-	Biquad::Settings settings {
-		.fs = context->audioSampleRate,
-		.type = Biquad::lowpass,
-		.cutoff = 200,
-		.q = 0.707,
-		.peakGainDb = 0,
-	};
-	// create some filters to process the input
-	gBiquads.resize(std::min(context->audioInChannels, context->audioOutChannels), Biquad(settings));
+	
+	std::string line;
+	// reading each line in the config file 
+	while(std::getline(configFile, line)){
+		std::istringstream iss(line);
+		std::string key;
+		// looking for energy threshold key in config 
+		if(iss >> key){
+			if(key == "energyThreshold"){
+				// read and parse energy threshold value
+				if(!(iss >> energyThreshold)){
+					rt_printf("Error reading energy threshold value\n");
+					return false;
+				}
+			// looking for record on/off key in config 
+			} else if(key == "recordAudio"){
+				// read and parse record duration value
+				if(!(iss >> recordAudio)){
+						rt_printf("Error reading recording on/off value\n");
+					return false;
+				}
+			// looking for record duration key in config
+			} else if(key == "recordDuration"){
+				// read and parse record duration value
+				if(!(iss >> recordDuration)){
+						rt_printf("Error reading recording duration value\n");
+					return false;
+				}
+			// looking for input gain key in config
+			}else if(key == "inputGain"){
+				// read and parse record duration value
+				if(!(iss >> inputGain)){
+						rt_printf("Error reading input gain value\n");
+					return false;
+				}
+			}
+		} 
+	}
+	
+	// closing config file
+	configFile.close();
 	return true;
 }
 
-void render(BelaContext *context, void *userData)
-{
-	for(unsigned int n = 0; n < context->audioFrames; ++n)
-	{
+// function to calculate energy of a buffer
+float calculateEnergy(const std::vector<float>& buffer) {
+	float energy = 0.0f;
+	for (const auto& sample : buffer) {
+		energy += sample * sample;
+	}
+	return energy / buffer.size();
+}
 
-		// store audio inputs
-		for(unsigned int c = 0; c < context->audioInChannels; ++c)
-			gInputs[c][gWrittenFrames] = audioRead(context, n, c);
+// function to setup
+bool setup(BelaContext *context, void *userData) {
+	// setting input gain for left and right
+	Bela_setAudioInputGain(0, inputGain);			
+	Bela_setAudioInputGain(1, inputGain);
+	
+	// converting to samples
+	refractoryPeriodSamples = context->audioSampleRate * refractoryPeriod;
+	activationDurationSamples = context->audioSampleRate * activationDuration;
+	
+	// seting digital pin as output pin
+	pinMode(context, 0, digitalPin, OUTPUT);   
+	
+	// read config file 
+	if(!readConfig(configFilename)){
+		rt_printf("Using default energy threshold value: %f\n", energyThreshold);
+		rt_printf("Using default recording duration value: %f\n", recordDuration);
+		rt_printf("Using default input gain value: %f\n", inputGain);
+	} else {
+		rt_printf("Using energy threshold value from config file: %f\n", energyThreshold);
+		rt_printf("Using recording duration value from config file: %f\n", recordDuration);
+		rt_printf("Using input gain value from config file: %f\n", inputGain);
+	}
+	
+	// audio recording status
+	if(recordAudio == 1){
+		rt_printf("Audio recording is ON\n");
+	} else if(recordAudio == 0){
+		rt_printf("Audio recording is OFF\n");
+	}
+	
+	// allocate memory to store audio
+	unsigned int numFrames = context->audioSampleRate * recordDuration;
+	audioRecorder.resize(context->audioInChannels);
+	try {
+		for(auto& c : audioRecorder)
+			c.resize(numFrames);
+	} catch (std::exception& e){
+		fprintf(stderr, "Error while allocating memory.");
+		return false;
+	}
+	return true;
+}
 
-		unsigned int c;
-		// process audio inputs through the filter, write to the audio outputs and store the audio outputs
-		for(c = 0; c < gBiquads.size(); ++c) {
-			float in = audioRead(context, n, c);
-			float out = gBiquads[c].process(in);
-			gOutputs[c][gWrittenFrames] = out;
-			audioWrite(context, n, c, out);
+// function to render new audio samples
+void render(BelaContext *context, void *userData) {
+	static float phase = 0.0f;
+	float phaseIncrement = 2.0f * M_PI * toneFreq / context->audioSampleRate;
+	
+	// loop over each sample
+	for (unsigned int n = 0; n < context->audioFrames; ++n) {
+		// read the current sample from the input channel 0
+		float currentSample = audioRead(context, n, 0);
+		
+	    // update the buffer with the current sample
+	    audioBuffer[bufferIndex] = currentSample;
+	    bufferIndex = (bufferIndex + 1) % bufferSize;
+	
+	    // increment hop counter
+	    hopCounter++;
+	    // wainitng until hopSize is reached  
+	    if (hopCounter >= hopSize) {
+	    	// reset hopCounter
+	        hopCounter = 0;
+	
+	        // calculate energy
+	        float energy = calculateEnergy(audioBuffer);
+	        // Print the energy value to the command line
+	        //rt_printf("Energy: %f\n", energy);
+	
+	        // check for energy-based onset detection
+	        if (energy >= energyThreshold && refractoryCounter <= 0) {
+	            rt_printf("Onset detected! Energy: %f\n", energy);
+	            rt_printf("Time since last onset: %f seconds\n", timeSinceLastOnset / context->audioSampleRate);
+	
+	            refractoryCounter = refractoryPeriodSamples;		 // set the refractory counter
+	            timeSinceLastOnset = 0;								 // reset the counter for time since last onset
+	            activationCounter = activationDurationSamples;       // set the activation counter
+	            digitalWrite(context, n, digitalPin, HIGH);          // activate the digital output pin
+	            // rt_printf("Pin On\n");
+	        }
+	    }
+	    
+	    // decrement the refractory counter if it's active
+	    if (refractoryCounter > 0) {
+	        refractoryCounter--;
+	    }
+	    
+	    // increment the counter for time since last onset
+	    timeSinceLastOnset++;
+	    
+	    // handle the digital output activation duration
+	    if (activationCounter > 0) {
+	        activationCounter--;
+	        if (activationCounter == 0) {
+	            digitalWrite(context, n, digitalPin, LOW);			  // deactivate the digital output pin
+	            // rt_printf("Pin Off\n");
+	        }
+	        
+	        // send audio pulse to audio output pin when trigger detected
+	        float out = sinf(phase);
+	        phase += phaseIncrement;
+	        if(phase >= 2.0f * M_PI){
+	        	phase -= 2.0f * M_PI;
+	        }
+	        audioWrite(context, n, 0, out);
+	        audioWrite(context, n, 1, out);
+		} else {
+			audioWrite(context, n, 0, 0.0f);
+	        audioWrite(context, n, 1, 0.0f);
 		}
-
-		++gWrittenFrames;
-		if(gWrittenFrames >= gOutputs[0].size()) {
-			// if we have processed enough samples an we have filled the pre-allocated buffer,
-			// stop the program
-			Bela_requestStop();
-			return;
+		
+		if(recordAudio == 1){
+			// store current sample to record
+			audioRecorder[0][recordingFrames] = currentSample;
+			++recordingFrames;
+			if(recordingFrames >= audioRecorder[0].size()){
+				Bela_requestStop();
+				return;
+			}
 		}
 	}
 }
 
-void cleanup(BelaContext *context, void *userData)
-{
-	// ensure we don't write any more frames than those that have actually been processed
-	// this way if the program is stopped by the user before its natural end we don't end up
-	// with a lot of empty samples at the end of each file.
-	for(auto& i : gInputs)
-		i.resize(gWrittenFrames);
-	for(auto& o : gOutputs)
-		o.resize(gWrittenFrames);
-	AudioFileUtilities::write(gFilenameInputs, gInputs, context->audioSampleRate);
-	AudioFileUtilities::write(gFilenameOutputs, gOutputs, context->audioSampleRate);
+void cleanup(BelaContext *context, void *userData) {
+	for(auto& i : audioRecorder)
+		i.resize(recordingFrames);
+	if(recordAudio == 1){
+		AudioFileUtilities::write(audioFilename, audioRecorder, context->audioSampleRate);
+		rt_printf("Audio recording saved\n");
+	}
 }
