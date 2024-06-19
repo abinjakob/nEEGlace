@@ -10,13 +10,21 @@ the energyThreshold it activates the digital pin if it is not in the refractory 
 #include <cmath>
 #include <vector>
 #include <iostream>
+#include <fstream>
+#include <string>
+#include <sstream>
+
+// config file 
+const std::string configFilename = "config.txt"; 
 
 // configuration parameters
-const int bufferSize = 512; 			   // num of samples stored in buffer for energy calculation
-const int hopSize = 256;			 	   // interval at which buffer is processed
-const float energyThreshold = 0.2;	   // threshold for detecting an onset
-const float refractoryPeriod = 0.5;		   // refractory period (sec)
-const float activationDuration = 0.05;	   // duration to activate the digital output pin after onset detection (sec)
+int bufferSize = 512; 						// num of samples stored in buffer for energy calculation
+int hopSize = 256;			 				// interval at which buffer is processed
+float refractoryPeriod = 0.5;				// refractory period (sec)
+float activationDuration = 0.05;			// duration to activate the digital output pin after onset detection (sec)
+int inputGain = 55;							// input gain for the microphones 	
+float energyThreshold = 0.2;				// threshold for detecting an onset
+float toneFreq = 200.0;
 
 // state variables
 std::vector<float> audioBuffer(bufferSize, 0.0f);
@@ -28,6 +36,36 @@ int timeSinceLastOnset = 0; 				// to track samples since last onset
 int activationDurationSamples;
 int activationCounter = 0;					// to track how long digital output is activated
 const int digitalPin = 0;					// digital pin number to activate
+
+// function to read from config file 
+bool readConfig(const std::string& filename){
+	// opening config file 
+	std::ifstream configFile(filename);
+	// throw error if config file cannot be opened 
+	if(!configFile.is_open()){
+		rt_printf("Cannot open the config file");
+		return false;
+	}
+	
+	std::string line;
+	// reading each line in the config file 
+	while(std::getline(configFile, line)){
+		std::istringstream iss(line);
+		std::string key;
+		// looking for energy threshold key in config 
+		if(iss >> key && key == "energyThreshold"){
+			// read and parse energy threshold value
+			if(!(iss >> energyThreshold)){
+				rt_printf("Error reading energy threshold value\n");
+				return false;
+			}
+		}
+	}
+	
+	// closing config file
+	configFile.close();
+	return true;
+}
 
 // function to calculate energy of a buffer
 float calculateEnergy(const std::vector<float>& buffer) {
@@ -41,25 +79,35 @@ float calculateEnergy(const std::vector<float>& buffer) {
 // function to setup
 bool setup(BelaContext *context, void *userData) {
 	// setting input gain for left and right
-	Bela_setAudioInputGain(0, 55);			
-	Bela_setAudioInputGain(1, 55);
+	Bela_setAudioInputGain(0, inputGain);			
+	Bela_setAudioInputGain(1, inputGain);
+	
 	// converting to samples
 	refractoryPeriodSamples = context->audioSampleRate * refractoryPeriod;
 	activationDurationSamples = context->audioSampleRate * activationDuration;
+	
 	// seting digital pin as output pin
 	pinMode(context, 0, digitalPin, OUTPUT);   
+	
+	// read config file 
+	if(!readConfig(configFilename)){
+		rt_printf("Using default energy threshold value: %f\n", energyThreshold);
+	} else {
+		rt_printf("Using energy threshold value from config file: %f\n", energyThreshold);
+	}
+	
 	return true;
 }
 
 // function to render new audio samples
 void render(BelaContext *context, void *userData) {
+	static float phase = 0.0f;
+	float phaseIncrement = 2.0f * M_PI * toneFreq / context->audioSampleRate;
 	
 	// loop over each sample
 	for (unsigned int n = 0; n < context->audioFrames; ++n) {
-		
 		// read the current sample from the input channel 0
 		float currentSample = audioRead(context, n, 0);
-	
 	    // update the buffer with the current sample
 	    audioBuffer[bufferIndex] = currentSample;
 	    bufferIndex = (bufferIndex + 1) % bufferSize;
@@ -68,7 +116,6 @@ void render(BelaContext *context, void *userData) {
 	    hopCounter++;
 	    // wainitng until hopSize is reached  
 	    if (hopCounter >= hopSize) {
-	    	
 	    	// reset hopCounter
 	        hopCounter = 0;
 	
@@ -112,6 +159,18 @@ void render(BelaContext *context, void *userData) {
 	            //audioWrite(context, n, 0, out);
 	        	//audioWrite(context, n, 1, out);
 	        }
+	        
+	        // send audio pulse to audio output pin when trigger detected
+	        float out = sinf(phase);
+	        phase += phaseIncrement;
+	        if(phase >= 2.0f * M_PI){
+	        	phase -= 2.0f * M_PI;
+	        }
+	        audioWrite(context, n, 0, out);
+	        audioWrite(context, n, 1, out);
+		} else {
+			audioWrite(context, n, 0, 0.0f);
+	        audioWrite(context, n, 1, 0.0f);
 		}
 	}
 }
