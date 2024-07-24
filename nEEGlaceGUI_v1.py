@@ -27,6 +27,14 @@ app = customtkinter.CTk()
 app.geometry('720x480')
 app.title('nEEGlace GUI')
 
+# function to handle closing the window
+def on_closingwindow():
+    app.quit()
+    app.destroy()
+
+# setting the protocol to handle window close
+app.protocol("WM_DELETE_WINDOW", on_closingwindow)
+
 # font styles 
 H1 = ('Arial', 24, 'bold')
 H2 = ('Arial', 20, 'bold')
@@ -47,18 +55,28 @@ app.grid_columnconfigure(0, weight=1)
 mainFrame= customtkinter.CTkFrame(app)
 mainFrame.grid(row=0, column=0, sticky='nsew')
 
-# setup frame 1
+# troubleshoot frame 1
 troubleshootFrame1= customtkinter.CTkFrame(app)
 troubleshootFrame1.grid(row=0, column=0, sticky='nsew')
 troubleshootFrame1.grid_forget()
 
-# setup frame 2
+# troubleshoot frame 2
 troubleshootFrame2= customtkinter.CTkFrame(app)
 troubleshootFrame2.grid(row=0, column=0, sticky='nsew')
 troubleshootFrame2.grid_forget()
 
+# configure frame
+configFrameMain = customtkinter.CTkFrame(app)
+configFrameMain.grid(row=0, column=0, sticky='nsew')
+configFrameMain.grid_forget()
+
+# streamerFrame
+streamerFrameMain = customtkinter.CTkFrame(app)
+streamerFrameMain.grid(row=0, column=0, sticky='nsew')
+streamerFrameMain.grid_forget()
+
 # configure grid layout for frames (add all frames here)
-for frame in (mainFrame, troubleshootFrame1, troubleshootFrame2):
+for frame in (mainFrame, troubleshootFrame1, troubleshootFrame2, configFrameMain, streamerFrameMain):
     frame.grid_rowconfigure(9, weight=1)
     for i in range(10):
         frame.grid_columnconfigure(i, weight=1)
@@ -72,6 +90,12 @@ for frame in (mainFrame, troubleshootFrame1, troubleshootFrame2):
 def on_troubleshoot():
     mainFrame.grid_forget()
     troubleshootFrame1.grid(sticky='nsew')
+def on_config():
+    mainFrame.grid_forget()
+    configFrameMain.grid(sticky='nsew')
+def on_start():
+    mainFrame.grid_forget()
+    streamerFrameMain.grid(sticky='nsew')
 
 # title 
 title = customtkinter.CTkLabel(mainFrame, text= 'Welcome to nEEGlace', font=H1)
@@ -83,13 +107,15 @@ body.grid(row=2, column=0, columnspan= 10, sticky='w', padx= (40,0), pady= (10,0
 
 # troubleshoot button
 BTtroubleshoot = customtkinter.CTkButton(mainFrame, text= 'Troubleshoot', fg_color='#5b5b5b', text_color='#b6b6b6', hover_color='#4f4f4f',
-                                         command=on_troubleshoot)
+                                         command= on_troubleshoot)
 BTtroubleshoot.grid(row=9, column=0, sticky='sw', padx= (40,0), pady= (0,40))
 # setup buttons
-BTsetup = customtkinter.CTkButton(mainFrame, text= 'Configure nEEGlace', fg_color='#ffffff', text_color='#000000', hover_color='#979797')
-BTsetup.grid(row=9, column=1, sticky='sw', padx= (0,10), pady= (0,40))
+BTconfig = customtkinter.CTkButton(mainFrame, text= 'Configure nEEGlace', fg_color='#ffffff', text_color='#000000', hover_color='#979797',
+                                   command= on_config)
+BTconfig.grid(row=9, column=1, sticky='sw', padx= (0,10), pady= (0,40))
 # start recording button
-BTstart = customtkinter.CTkButton(mainFrame, text= 'Start Recording')
+BTstart = customtkinter.CTkButton(mainFrame, text= 'Start Streaming', 
+                                  command= on_start)
 BTstart.grid(row=9, column=9, sticky='se', padx= (10,40), pady= (0,40))
 
 
@@ -178,15 +204,19 @@ def on_t2next():
     else:
         t2_ampstatans.configure(text= 'Bluetooth ON', text_color='#569cff')
         t2_Q1label.configure(text= 'Connecting to LSL network', text_color='#ffffff')
-        # t2_bar.grid(row=9, column=0, sticky='w', padx= (120,0), pady= (0,60))
-        t2_bar.grid(row=9, column=1, sticky='w', padx= (0,0), pady= (0,60))
+        # disable button
+        t2_BTback2main.configure(state='disabled')
+        t2_BTprev.configure(state='disabled')
+        t2_BTnext.configure(state='disabled')
+        # run progressbar
+        t2_bar.grid(row=9, column=1, sticky='w', padx= (20,0), pady= (0,60))
         t2_bar.start()
         # troubleshootFrame1.grid_forget()
         # troubleshootFrame2.grid(sticky='nsew')
         
 
 # title 
-t2_title =  customtkinter.CTkLabel(troubleshootFrame2, text= 'Setup nEEGlace', font=H2)
+t2_title =  customtkinter.CTkLabel(troubleshootFrame2, text= 'Troubleshoot nEEGlace', font=H2)
 t2_title.grid(row=0, column=0, columnspan= 10, sticky='w', padx= (40,0), pady= (40,0))
 # device status
 t2_devicestat = customtkinter.CTkLabel(troubleshootFrame2, text= 'Device Status:', font=B2, text_color='#979797', justify= 'left')
@@ -216,20 +246,13 @@ t2_Q1radio2 = customtkinter.CTkRadioButton(troubleshootFrame2, text= 'Blinking G
 t2_Q1radio2.grid(row=4, column=0, sticky='w', padx=(40, 0), pady=(8, 0))
 t2_Q1radio3 = customtkinter.CTkRadioButton(troubleshootFrame2, text= 'Blinking Pink', variable=t2_Q1radioInput, value= 2)
 t2_Q1radio3.grid(row=5, column=0, sticky='w', padx=(40, 0), pady=(8, 0))
-t2_Q1radio4 = customtkinter.CTkRadioButton(troubleshootFrame2, text= 'Blinking Red and Turned off', variable=t2_Q1radioInput, value= 3)
-t2_Q1radio4.grid(row=6, column=0, sticky='w', padx=(40, 0), pady=(8, 0))
+t2_Q1radio4 = customtkinter.CTkRadioButton(troubleshootFrame2, text= 'Blinking Red & Turned off', variable=t2_Q1radioInput, value= 3)
+t2_Q1radio4.grid(row=6, column=0, columnspan= 2, sticky='w', padx=(40, 0), pady=(8, 0))
 
 # error label
 t2_Q1label = customtkinter.CTkLabel(troubleshootFrame2, text= '', font=B2, justify= 'left')
 t2_Q1label.grid(row=9, column=0, columnspan= 10, sticky='w', padx= (40,0), pady= (0,60))
 t2_bar = customtkinter.CTkProgressBar(troubleshootFrame2, progress_color= '#ffffff', height= 2, corner_radius=2)
-
-
-
-
-
-
-
 
 # back button
 t2_BTback2main = customtkinter.CTkButton(troubleshootFrame2, text= 'Back to Main Menu', fg_color='#5b5b5b', text_color='#b6b6b6', hover_color='#4f4f4f', 
@@ -244,6 +267,56 @@ t2_BTnext = customtkinter.CTkButton(troubleshootFrame2, text= 'Next  >>',
                                     command= on_t2next)
 t2_BTnext.grid(row=9, column=9, sticky='se', padx= (10,40), pady= (0,40))
 
+
+
+
+# --- Configure Main Frame UI ---
+
+# button functions
+def on_cfgmsave():
+    configFrameMain.grid_forget()
+    mainFrame.grid(sticky='nsew')
+def on_cfgsave():
+    print(f'Gain      : {cfgM_gainentry.get()}')
+    print(f'Threshold : {cfgM_threshentry.get()}')
+
+# title 
+cfgM_title =  customtkinter.CTkLabel(configFrameMain, text= 'Configure nEEGlace', font=H2)
+cfgM_title.grid(row=0, column=0, columnspan= 10, sticky='w', padx= (40,0), pady= (40,0))
+# bela setings
+cfgM_title1 = customtkinter.CTkLabel(configFrameMain, text= 'Bela Board Settings', font=B1, text_color='#979797', justify= 'left')
+cfgM_title1.grid(row=1, column=0, columnspan= 5, sticky='w', padx= (40,0), pady= (40,0))
+# input gain
+cfgM_gaintxt = customtkinter.CTkLabel(configFrameMain, text= 'Microphone Input Gain', font=B1)
+cfgM_gaintxt.grid(row=2, column=0, sticky='w', padx= (40,0), pady= (10,0))
+cfgM_gainentry = customtkinter.CTkEntry(configFrameMain, width= 48)
+cfgM_gainentry.grid(row=2, column=2, sticky='w', padx= (0,0), pady= (10,0))
+# energy threshold
+cfgM_threshtxt = customtkinter.CTkLabel(configFrameMain, text= 'Energy Threshold', font=B1)
+cfgM_threshtxt.grid(row=3, column=0, sticky='w', padx= (40,0), pady= (0,0))
+cfgM_threshentry = customtkinter.CTkEntry(configFrameMain, width= 48)
+cfgM_threshentry.grid(row=3, column=2, sticky='w', padx= (0,0), pady= (10,0))
+# audio setings
+cfgM_title2 = customtkinter.CTkLabel(configFrameMain, text= 'Audio Recording', font=B1, text_color='#979797', justify= 'left')
+cfgM_title2.grid(row=4, column=0, columnspan= 5, sticky='w', padx= (40,0), pady= (40,0))
+# record audio
+cfgM_recordtxt = customtkinter.CTkLabel(configFrameMain, text= 'Record Audio', font=B1)
+cfgM_recordtxt.grid(row=5, column=0, sticky='w', padx= (40,0), pady= (10,0))
+# # record duration
+cfgM_durtxt = customtkinter.CTkLabel(configFrameMain, text= 'Audio Record Duration', font=B1)
+cfgM_durtxt.grid(row=6, column=0, sticky='w', padx= (40,0), pady= (0,0))
+cfgM_durentry = customtkinter.CTkEntry(configFrameMain, width= 48)
+cfgM_durentry.grid(row=6, column=2, sticky='w', padx= (0,0), pady= (10,0))
+
+
+# back button
+cfgM_BTback2main = customtkinter.CTkButton(configFrameMain, text= 'Back to Main Menu', fg_color='#5b5b5b', text_color='#b6b6b6', hover_color='#4f4f4f', 
+                                 command= on_cfgmsave)
+cfgM_BTback2main.grid(row=9, column=0, sticky='sw', padx= (40,0), pady= (0,40))
+# save button
+cfgM_BTsave = customtkinter.CTkButton(configFrameMain, text= 'Save Changes',
+                                    command= on_cfgsave)
+cfgM_BTsave.grid(row=9, column=9, sticky='se', padx= (10,40), pady= (0,40))
 
 # run app
 app.mainloop()
