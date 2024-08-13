@@ -12,10 +12,32 @@ python using Tkinter
          abin.jacob@uni-oldenburg.de
 """
 
+# params ---------------------------------------------------
+
+# common outputs of push2lsl
+errstr1   = 'not recognised as an internal or external command'
+errstr2   = 'DeviceNotFoundError'
+successtr = 'Device info packet has been received. Connection has been established. Streaming...'
+
+
+# ----------------------------------------------------------
+
+
+
 # libraries
+import time
+import os
+import signal
+# interface
 import tkinter 
 import customtkinter
-import time
+# subprocess
+import subprocess
+import threading 
+# lsl
+from pylsl import StreamInlet, StreamInfo, resolve_stream
+
+
 
 
 # system settings 
@@ -26,9 +48,29 @@ customtkinter.set_default_color_theme('blue')
 app = customtkinter.CTk()
 app.geometry('720x480')
 app.title('nEEGlace GUI')
+proc = None
 
 # function to handle closing the window
 def on_closingwindow():
+    global proc, killstatus
+    if proc is not None:
+        proc.terminate()
+        proc.wait()
+        killstatus = 1
+        try:
+            proc.wait(timeout=5)
+            killstatus = 2
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            killstatus = 3
+        
+        try:
+            if proc.poll() is None:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                killstatus = 4
+        except Exception as e:
+            print(f'Error killing explorepy: {e}')
+            killstatus = 5
     app.quit()
     app.destroy()
 
@@ -50,6 +92,9 @@ app.grid_columnconfigure(0, weight=1)
 
 
 
+    
+
+
 # --- app frames ---
 
 # main frame 
@@ -66,6 +111,11 @@ troubleshootFrame2= customtkinter.CTkFrame(app)
 troubleshootFrame2.grid(row=0, column=0, sticky='nsew')
 troubleshootFrame2.grid_forget()
 
+# troubleshoot frame 3
+troubleshootFrame3= customtkinter.CTkFrame(app)
+troubleshootFrame3.grid(row=0, column=0, sticky='nsew')
+troubleshootFrame3.grid_forget()
+
 # configure frame
 configFrameMain = customtkinter.CTkFrame(app)
 configFrameMain.grid(row=0, column=0, sticky='nsew')
@@ -77,7 +127,7 @@ streamerFrameMain.grid(row=0, column=0, sticky='nsew')
 streamerFrameMain.grid_forget()
 
 # configure grid layout for frames (add all frames here)
-for frame in (mainFrame, troubleshootFrame1, troubleshootFrame2, configFrameMain, streamerFrameMain):
+for frame in (mainFrame, troubleshootFrame1, troubleshootFrame2, troubleshootFrame3, configFrameMain, streamerFrameMain):
     frame.grid_rowconfigure(9, weight=1)
     for i in range(10):
         frame.grid_columnconfigure(i, weight=1)
@@ -188,6 +238,35 @@ t1_BTnext.grid(row=9, column=9, sticky='se', padx= (10,40), pady= (0,40))
 # --- troubleshoot frame2 UI ---
 # checking the status of the Mentalab amp
 
+# function to connect to stream
+def t2connectStream():
+    global isConnected, streamStatus, proc
+    # initialising glob variables 
+    isConnected  = False
+    streamStatus = 0
+    try:
+        # start a subprocess for push2lsl
+        # also captures its standard output and error
+        with subprocess.Popen('explorepy push2lsl -n Explore_84D1', shell= True, stdout= subprocess.PIPE, stderr= subprocess.STDOUT, bufsize= 1, text= True, universal_newlines= True) as proc:
+            # continuous monitoring output of subprocess#
+            for line in proc.stdout:
+                # check if connection is made
+                if successtr in line:
+                    streamStatus = 1
+                    isConnected = True
+                    break
+                # check for errors 
+                if errstr1 in line:
+                    streamStatus = 2
+                    break
+                if errstr2 in line:
+                    streamStatus = 3
+                    break
+        if not isConnected:
+            proc.terminate()
+    except Exception as e:
+        streamStatus = 4
+
 # button functions
 def on_t2back():
     troubleshootFrame2.grid_forget()
@@ -209,12 +288,62 @@ def on_t2next():
         t2_BTback2main.configure(state='disabled')
         t2_BTprev.configure(state='disabled')
         t2_BTnext.configure(state='disabled')
+        # disable options
+        t2_Q1radio1.configure(state='disabled')
+        t2_Q1radio2.configure(state='disabled')
+        t2_Q1radio3.configure(state='disabled')
+        t2_Q1radio4.configure(state='disabled')
+        
         # run progressbar
         t2_bar.grid(row=9, column=1, sticky='w', padx= (20,0), pady= (0,60))
         t2_bar.start()
-        # troubleshootFrame1.grid_forget()
-        # troubleshootFrame2.grid(sticky='nsew')
         
+        # attempt connection (starting in different thread to avoid UI being frozen)
+        connectionThread = threading.Thread(target= t2connectStream)
+        connectionThread.start()
+        # continuously checking streamStatus
+        checkThread(connectionThread)
+
+# function to continuously check streamStatus from the thread
+stopCheck = False
+def checkThread(connectionThread):
+    global streams, inlet, srate, stopCheck
+    # checks every 100ms if thread is complete
+    if connectionThread.is_alive():
+        if not stopCheck:    
+            troubleshootFrame2.after(300, lambda: checkThread(connectionThread))
+        if streamStatus == 1:
+            try:
+                stream  = resolve_stream('type', 'EEG')
+                inlet   = StreamInlet(stream[0])
+                srate   = inlet.info().nominal_srate()
+                nbchans = inlet.info().channel_count()
+                print('LSL stream connected')
+                t2_bar.stop()
+                t2_bar.grid_forget()
+                t2_Q1label.configure(text= 'Connected')
+                troubleshootFrame2.grid_forget()
+                troubleshootFrame3.grid(sticky='nsew')
+                stopCheck = True
+            except Exception as e:
+                print('Unable to connect to LSL stream')          
+            
+    # if complete
+    else:
+        # check connection status
+        if streamStatus == 2:
+            t2_bar.stop()
+            t2_bar.grid_forget()
+            t2_Q1label.configure(text= 'Error: ExplorePy is not installed', text_color='#f34444')
+        elif streamStatus == 3:
+            t2_bar.stop()
+            t2_bar.grid_forget()
+            t2_Q1label.configure(text= 'Error: Unable to connect to nEEGlace. Restart and try again. Also kill the explorepy subprocess from Windows Task Manager if exist', text_color='#f34444')    
+        elif streamStatus == 4:
+            t2_bar.stop()
+            t2_Q1label.configure(text= 'Error: Unable to connect to nEEGlace. Restart and try again.', text_color='#f34444')
+        
+            
 
 # title 
 t2_title =  customtkinter.CTkLabel(troubleshootFrame2, text= 'Troubleshoot nEEGlace', font=H2)
@@ -426,4 +555,3 @@ strM_BTeegstream.grid(row=9, column=9, sticky='se', padx= (10,40), pady= (0,40))
 
 # run app
 app.mainloop()
-
