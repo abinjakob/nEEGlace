@@ -13,7 +13,27 @@ audio streams are working as expected.
          abin.jacob@uni-oldenburg.de
 """
 
+
+# SET PARAMS ------------------------------------
+
+# threshold for sound trigger
+thresh = 5
+# trigger channel in the stream
+triggerChan = 7
+# duration to look for sound trigger (in sec)
+look4sound = 5
+
+# common outputs of push2lsl
+errstr1 = 'not recognized as an internal or external command'
+errstr2 = 'DeviceNotFoundError'
+successtr = 'Device info packet has been received. Connection has been established. Streaming...'
+isConnected = False
+
+# -----------------------------------------------
+
 # libraries 
+import os
+import signal
 import numpy as np
 import math
 import pylsl
@@ -28,7 +48,7 @@ import time
 from colorama import init as colorama_init
 from colorama import Fore, Back, Style
 import logging
-
+from pylsl import StreamInlet, resolve_stream, StreamInfo
 
 # creating a welcome message 
 print('\n-------------------------')
@@ -65,7 +85,7 @@ print(f'\n{Back.WHITE}Step 2:{Style.RESET_ALL}\nPlease turn on the Amplifier by 
 count = 0
 ampstate = 0 
 while count < 5:
-    time.sleep(1)
+    time.sleep(3)
     print('\nWhat blinking light do you see on the amp?')
     print(f'1. {Back.BLUE}Blue{Style.RESET_ALL}, 2. {Back.GREEN}Green{Style.RESET_ALL}, 3. {Back.MAGENTA}Pink{Style.RESET_ALL}, 4. Blinked {Back.RED}Red{Style.RESET_ALL} and turned off{Style.RESET_ALL}')
     userinput = input('Enter color? [1/2/3/4]:')
@@ -97,35 +117,106 @@ else:
     print('Program ended...')
     sys.exit()
 
-# common outputs of push2lsl
-errstr1 = 'not recognized as an internal or external command'
-errstr2 = 'DeviceNotFoundError'
-successtr = 'Device info packet has been received. Connection has been established. Streaming...'
-isConnected = False
-
-# if amp is on and advertising
-try:
-    print('Connecting.... Please wait')
-    # starting subprocess for push2lsl 
-    # also capturing its standard output and error
-    with subprocess.Popen('explorepy push2lsl -n Explore_84D1', shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, text=True, universal_newlines=True) as proc:
-        # continuously monitoring the output of subprocess
-        for line in proc.stdout:  
-            # checking if connection is made
-            if successtr in line:
-                print(f'nEEGlace is connected and streaming{Style.RESET_ALL}')
-                isConnected = True
+proc= None
+try:    
+    # if amp is on and advertising
+    try:
+        print('Connecting.... Please wait')
+        # starting subprocess for push2lsl 
+        # also capturing its standard output and error
+        with subprocess.Popen('explorepy push2lsl -n Explore_84D1', shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, text=True, universal_newlines=True) as proc:
+            # continuously monitoring the output of subprocess
+            for line in proc.stdout:  
+                # checking if connection is made
+                if successtr in line:
+                    print(f'nEEGlace is connected. Pushing to LSL...{Style.RESET_ALL}')
+                    isConnected = True
+                    break
+                # checking for error messages
+                if errstr1 in line:
+                    print(f'{Back.RED}ExplorePy is not installed{Style.RESET_ALL}')
+                    print('Downlaod from: https://pypi.org/project/explorepy/')
+                    proc.terminate()
+                    sys.exit()
+                if errstr2 in line:
+                    print(f'{Back.RED}Unable to connect to nEEGlace{Style.RESET_ALL}')
+                    print('Restart the Amplifier  and try again or long press the button until it blinks blue.')
+                    proc.terminate()
+                    sys.exit()                
+                if not isConnected:
+                    proc.terminate()
+    except Exception as e:
+        print(f'An error occurred: {e}')
+    
+    if isConnected:
+        # resolve and initialise stream
+        streams = resolve_stream('type', 'EEG')
+        inlet = StreamInlet(streams[0])
+        # retrieving sampling rate 
+        srate = inlet.info().nominal_srate()
+        time.sleep(2)
+        print(f'\n{Back.GREEN}nEEGlace is Ready{Style.RESET_ALL} and streaming to LSL')
+    else:
+        print('Unable to connect to LSL stream. Try again..')
+        sys.exit() 
+    
+    time.sleep(2)
+    # checking the sound stream
+    print(f'\n{Back.WHITE}Step 3:{Style.RESET_ALL}\nNow lets test the sound stream to check if it working fine')
+    
+    # function to process incoming data and detect triggers
+    def detectSound():
+        global soundDetector, sample
+        sample = None
+        # pull sample
+        sample, timestamp = inlet.pull_sample(timeout= 1.0)
+        # print(sample)
+        if sample is None:
+            return
+        # check if trigger present
+        if sample[triggerChan-1] > thresh:
+            # print(sample)
+            print(f'{Back.GREEN}Audio event detected{Style.RESET_ALL}')
+            soundDetector = True
+    
+    # initialising counters 
+    count = 0
+    nosound = 0
+    # running loop for sound check 3 times
+    while count < 3 and nosound < 3:
+        # print(sample)
+        print('\nMake a loud sound')
+        soundDetector = False
+        start = time.time()
+        # look for sound for short duration
+        while time.time()-start < look4sound:
+            detectSound()
+            time.sleep(1/srate)
+            # if sound detected increment counter
+            if soundDetector:
+                time.sleep(3)
+                count += 1
                 break
-            # checking for error messages
-            if errstr1 in line:
-                print(f'{Back.RED}ExplorePy is not installed{Style.RESET_ALL}')
-                print('Downlaod from: https://pypi.org/project/explorepy/')
-                sys.exit()
-            if errstr2 in line:
-                print(f'{Back.RED}Unable to connect to nEEGlace{Style.RESET_ALL}')
-                print('Restart the Amplifier and long press the button until it is blue and try again.')
-                sys.exit()                
-            if not isConnected:
-                proc.terminate()
-except Exception as e:
-    print(f'An error occurred: {e}')
+        # if sound not detected within the period
+        if not soundDetector:
+            nosound += 1
+            if nosound < 3:
+                print('Cannot detect sound.... Make a louder sound!')
+            else:
+                print('Unable to detect sound! Check if the Bella Board is powered and try again.')
+                # sys.exit()
+            
+finally:
+    if proc:
+        proc.kill()
+
+  
+
+
+    
+    
+    
+    
+    
+    
+        
