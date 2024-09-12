@@ -19,6 +19,7 @@ Modified By: Abin Jacob
 import numpy as np
 import math
 import pylsl
+from pylsl import resolve_stream
 import pyqtgraph as pg
 from PyQt5.QtWidgets import QApplication
 from pyqtgraph.Qt import QtCore
@@ -72,6 +73,7 @@ class DataInlet(Inlet):
                 plt_ch7.addItem(curve)
             else:
                 plt_main.addItem(curve)
+        self.plt_ch7 = plt_ch7
     
     # function to pull new data chunks from a data stream, update the data buffer
     # and update the corresponding plots for each channel of data. 
@@ -100,19 +102,22 @@ class DataInlet(Inlet):
                 new_vals = np.hstack((old_vals[oldOffset:], vals[newOffset:, ichan] - ichan))
                 # replace the old data
                 self.curves[ichan].setData(new_ts, new_vals)
+                if ichan == 6:
+                    self.plt_ch7.setYRange(-300,300)
 
 def main():
     inlets: List[Inlet] = []
     print("Looking for nEEGlace...")
     # resolving streams
-    streams = pylsl.resolve_streams()
+    # resolving streams
+    streams = pylsl.resolve_stream('type', 'EEG')
 
     # setting up main plot window with two subplots
     win = pg.GraphicsLayoutWidget(show=True, title="nEEGlace EEG Stream")
     win.resize(1000, 600)
 
-    plt_main = win.addPlot(row=0, col=0, title="All Channels except Channel 7")
-    plt_ch7 = win.addPlot(row=1, col=0, title="Channel 7")
+    plt_main = win.addPlot(row=0, col=0, title="EEG Stream")
+    plt_ch7 = win.addPlot(row=1, col=0, title="Sound Onset")
 
     plt_main.enableAutoRange(x=False, y=True)
     plt_ch7.enableAutoRange(x=False, y=True)
