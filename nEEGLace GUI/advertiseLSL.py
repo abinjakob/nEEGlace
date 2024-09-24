@@ -7,8 +7,11 @@ successtr = 'Device info packet has been received. Connection has been establish
 
 proc = None
 
+
 def LSLestablisher(deviceName='Explore_84D1'):
     global proc 
+    streamStatus = 0
+    isConnected = False
     
     try:
         proc = subprocess.Popen(['explorepy', 'push2lsl', '-n', deviceName], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, text=True, universal_newlines=True)
@@ -19,6 +22,7 @@ def LSLestablisher(deviceName='Explore_84D1'):
             if successtr in line:
                 streamStatus = 1
                 isConnected = True
+                print(f'{deviceName} LSL Stream Advertising')
                 break
             # check for errors
             if errstr1 in line:
@@ -33,17 +37,18 @@ def LSLestablisher(deviceName='Explore_84D1'):
             
     except Exception as e:
         streamStatus = 4
-        print(f'Error {e}')
+        # print(f'Error {e}')
     
     return streamStatus
 
-def LSLkiller():
+def LSLkiller(deviceName='Explore_84D1'):
     global proc
     
     if proc is not None:
         try:      
             proc.terminate()
             proc = None  
+            print(f'{deviceName} LSL Stream Killed')
             return True
         except Exception as e:
             print(f'Error {e}')

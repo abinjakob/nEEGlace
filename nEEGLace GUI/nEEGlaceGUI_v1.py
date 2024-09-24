@@ -124,7 +124,8 @@ app = customtkinter.CTk()
 app.geometry('720x480')
 
 # function to handle closing the window
-def on_closingwindow():
+def on_closingwindow(): 
+    LSLkiller('Explore_84D1')
     app.quit()
     app.destroy()
 
@@ -178,13 +179,18 @@ configFrameMain = customtkinter.CTkFrame(app)
 configFrameMain.grid(row=0, column=0, sticky='nsew')
 configFrameMain.grid_forget()
 
+# streamerConnect Frame
+streamerFrameLoad = customtkinter.CTkFrame(app)
+streamerFrameLoad.grid(row=0, column=0, sticky='nsew')
+streamerFrameLoad.grid_forget()
+
 # streamerFrame
 streamerFrameMain = customtkinter.CTkFrame(app)
 streamerFrameMain.grid(row=0, column=0, sticky='nsew')
 streamerFrameMain.grid_forget()
 
 # configure grid layout for frames (add all frames here)
-for frame in (mainFrame, troubleshootFrame1, troubleshootFrame2, troubleshootFrame3, configFrameMain, streamerFrameMain):
+for frame in (mainFrame, troubleshootFrame1, troubleshootFrame2, troubleshootFrame3, configFrameMain, streamerFrameMain, streamerFrameLoad):
     frame.grid_rowconfigure(9, weight=1)
     for i in range(10):
         frame.grid_columnconfigure(i, weight=1)
@@ -193,6 +199,12 @@ for frame in (mainFrame, troubleshootFrame1, troubleshootFrame2, troubleshootFra
 
 
 # --- main frame UI ---
+
+# function to connect to stream
+def connect2Stream():
+    global streamStatus
+    # run the LSLestablisher module
+    streamStatus = LSLestablisher('Explore_84D1')
 
 # button functions
 def on_troubleshoot():
@@ -205,19 +217,60 @@ def on_config():
 def on_start():
     global inlet, streaminfo, sfreq, nchan
     
-    inlet, streaminfo = connectstreams()
+    # move to loading screen
+    mainFrame.grid_forget()
+    streamerFrameLoad.grid(sticky='nsew')
     
-    # check if connected 
-    if not inlet:
-        print('Error: Cant connect to stream')
-        sfreq = 0
-        nchan = 0
+    # start a seperate thread for LSL advertising
+    thread4LSL = threading.Thread(target= connect2Stream)
+    thread4LSL.start()
+    # continuously checking streamStatus
+    checkThread4LSL(thread4LSL)
+
+# function to continuously check streamStatus from the thread
+stopCheck = False
+def checkThread4LSL(thread4LSL):
+    global streams, inlet, srate, nbchans, stopCheck
+    # checks every 100ms if thread is complete
+    if thread4LSL.is_alive():
+        if not stopCheck: 
+            streamerFrameLoad.after(300, lambda: checkThread4LSL(thread4LSL))
+    elif streamStatus == 1:
+        # run connectStream module
+        inlet, streaminfo = connectstreams()
+        
+        # check if connected 
+        if not inlet:
+            print('Error: Cant connect to stream')
+            sfreq = 0
+            nchan = 0
+        else:
+            configdata = fetchConfig()
+            sfreq = streaminfo.nominal_srate()
+            nchan  = streaminfo.channel_count()
+            print(f'Sampling Rate: {sfreq}')
+            
+            # updating the variables in the streamer main frame
+            strM_sfreqans.configure(text= int(streaminfo.nominal_srate()))
+            strM_nchanans.configure(text= streaminfo.channel_count())
+            strM_trgchanans.configure(text= triggerChan)
+            if configdata[2] == 0:
+                recordAns = 'OFF'
+                recordansClr = UIfont['error']
+            elif configdata[2] == 1:
+                recordAns = 'ON'
+                recordansClr = UIfont['success']
+            strM_recordans.configure(text= recordAns, text_color= recordansClr)
+            streamerFrameLoad.grid_forget()
+            streamerFrameMain.grid(sticky='nsew')
     else:
-        sfreq = streaminfo.nominal_srate()
-        nchan  = streaminfo.channel_count()
-        print(f'Sampling Rate: {sfreq}')
-        mainFrame.grid_forget()
-        streamerFrameMain.grid(sticky='nsew')
+        # throw an error in GUI
+        strL_body.configure(text = 'Error: Cannot advertise LSL. Please try again.', text_color=UIfont['error'])
+        strL_bar.stop()
+        strL_bar.grid_forget()
+        # move back to main screen after a short while
+        streamerFrameLoad.after(2000, lambda: (streamerFrameLoad.grid_forget(), mainFrame.grid(sticky='nsew')))
+            
 
 # title 
 title = customtkinter.CTkLabel(mainFrame, text= 'Welcome to nEEGlace', font=H1)
@@ -497,9 +550,8 @@ def on_t3start():
     taw_BTclose.pack(pady= (100,0))
     
 def on_t3stop():
-    killstat = LSLkiller()
+    killstat = LSLkiller('Explore_84D1')
     if killstat:
-        print('LSL Stream Killed')
         time.sleep(3)
         troubleshootFrame3.grid_forget()
         mainFrame.grid(sticky='nsew')
@@ -585,7 +637,7 @@ def on_cfgmsave():
         else:
             cfgM_infonotestr = 'Changes made to the settings are saved'
             cfgM_infonote.configure(text = cfgM_infonotestr, text_color= UIfont['success'])
-            # wait for 2sec to show save feedback and then goto main frame
+            # wait for a while to show save feedback and then goto main frame
             configFrameMain.after(1400, lambda: (configFrameMain.grid_forget(), mainFrame.grid(sticky='nsew')))
     else:
         cfgM_infonotestr = 'Changes made to the settings are saved'
@@ -731,12 +783,28 @@ if not belastatus:
 
 
 
+# --- Streamer Load Frame UI ---     
+strL_body = customtkinter.CTkLabel(streamerFrameLoad, text= 'Connecting to LSL', font=B2, text_color= UIfont['normal'], justify= 'center')
+strL_body.grid(row=0, column=0, columnspan= 10, sticky='ew', pady= (200,0))
+strL_bar = customtkinter.CTkProgressBar(streamerFrameLoad, progress_color= '#ffffff', height= 2, corner_radius=2)
+strL_bar.grid(row=1, column=0, sticky='ew', padx= (245,0), pady= (10,0))
+strL_bar.start()
+
 
 # --- Streamer Main Frame UI ---
+
+
 
 # button functions
 def on_streameeg():
     plotEEG(inlet)
+
+def on_streamquit():
+    killstat = LSLkiller('Explore_84D1')
+    if killstat:
+        time.sleep(3)
+        streamerFrameMain.grid_forget()
+        mainFrame.grid(sticky='nsew')
     
     
 
@@ -794,13 +862,14 @@ strM_sndstatans = customtkinter.CTkLabel(streamerFrameMain, text= f'{sndstat}', 
 strM_sndstatans.grid(row=5, column=9, columnspan= 5, sticky='w', padx= (80,0), pady= (0,0))
 
 # quit button
-strM_BTquit = customtkinter.CTkButton(streamerFrameMain, text= 'Quit Stream', fg_color='#5b2b2b', text_color='#b6b6b6', hover_color='#4f2121')
+strM_BTquit = customtkinter.CTkButton(streamerFrameMain, text= 'Quit Stream', fg_color='#5b2b2b', text_color='#b6b6b6', hover_color='#4f2121',
+                                      command= on_streamquit)
 strM_BTquit.grid(row=9, column=0, sticky='sw', padx= (40,0), pady= (0,40))
 # ERP button 
-strM_BTerp = customtkinter.CTkButton(streamerFrameMain, text= 'Show ERP', fg_color='#5b5b5b', text_color='#b6b6b6', hover_color='#4f4f4f')
+strM_BTerp = customtkinter.CTkButton(streamerFrameMain, text= 'Show ERP', fg_color='#ffffff', text_color='#000000', hover_color='#979797')
 strM_BTerp.grid(row=9, column=9, sticky='se', padx= (0,190), pady= (0,40))
 # Plot Stream button
-strM_BTeegstream = customtkinter.CTkButton(streamerFrameMain, text= 'Plot EEG Data', fg_color='#5b5b5b', text_color='#b6b6b6', hover_color='#4f4f4f',
+strM_BTeegstream = customtkinter.CTkButton(streamerFrameMain, text= 'Plot EEG Data', fg_color='#ffffff', text_color='#000000', hover_color='#979797',
                                            command= on_streameeg)
 strM_BTeegstream.grid(row=9, column=9, sticky='se', padx= (10,40), pady= (0,40))
 
