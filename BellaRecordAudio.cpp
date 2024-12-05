@@ -16,6 +16,7 @@ the energyThreshold it activates the digital pin if it is not in the refractory 
 #include <libraries/AudioFile/AudioFile.h>
 #include <libraries/Biquad/Biquad.h>
 #include <algorithm>
+#include <ctime>
 
 
 // config file 
@@ -26,7 +27,7 @@ int bufferSize = 512; 							// num of samples stored in buffer for energy calcu
 int hopSize = 256;			 					// interval at which buffer is processed
 float refractoryPeriod = 0.5;					// refractory period (sec)
 float activationDuration = 0.05;				// duration to activate the digital output pin after onset detection (sec)
-float inputGain = 55;								// input gain for the microphones 	
+float inputGain = 55;							// input gain for the microphones 	
 float energyThreshold = 0.2;					// threshold for detecting an onset
 float toneFreq = 200.0;
 
@@ -42,12 +43,22 @@ int activationCounter = 0;						// to track how long digital output is activated
 const int digitalPin = 0;						// digital pin number to activate
 
 // recording audio variables
-std::vector<std::vector<float>> audioRecorder;	// variable to save
-std::string audioFilename = "audiofile.wav";	// filename to save audio
-double recordAudio = 0;						// recording duration in sec 
+std::vector<std::vector<float>> audioRecorder;	// variable to save audio
+std::string audioFilename;						// filename to save audio
+std::vector<int>digitalPinRecorder;				// variable to save digital pin states for the marker events 
+std::string markerFilename;						// filename to save markers from the digital pin
+double recordAudio = 0;							// recording duration in sec 
 double recordDuration = 20;						// recording duration in sec 
 unsigned int recordingFrames = 0;				// to track the frames recorded
 
+
+// function to generate a unique filename (adds the current timestamp)
+std::string generateFilename(const std::string& baseFilename){
+	std::time_t now = std::time(nullptr);
+	char timestamp[20];
+	std::strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", std::localtime(&now));
+	return baseFilename + "_" + timestamp;
+}
 
 // function to read from config file 
 bool readConfig(const std::string& filename){
@@ -137,7 +148,13 @@ bool setup(BelaContext *context, void *userData) {
 	
 	// audio recording status
 	if(recordAudio == 1){
-		rt_printf("Audio recording is ON\n");
+		// generate file name for audio file
+		audioFilename = generateFilename("audiofile") + ".wav";
+		rt_printf("Audio recording is ON. Recording to file: %s\n", audioFilename.c_str());
+		// generate file name for markers 
+		markerFilename = generateFilename("markerfile") + ".txt";
+		rt_printf("Audio Marker file: %s\n", markerFilename.c_str());
+		
 	} else if(recordAudio == 0){
 		rt_printf("Audio recording is OFF\n");
 	}
@@ -145,6 +162,7 @@ bool setup(BelaContext *context, void *userData) {
 	// allocate memory to store audio
 	unsigned int numFrames = context->audioSampleRate * recordDuration;
 	audioRecorder.resize(context->audioInChannels);
+	digitalPinRecorder.resize(numFrames);
 	try {
 		for(auto& c : audioRecorder)
 			c.resize(numFrames);
@@ -226,6 +244,7 @@ void render(BelaContext *context, void *userData) {
 		if(recordAudio == 1){
 			// store current sample to record
 			audioRecorder[0][recordingFrames] = currentSample;
+			digitalPinRecorder[recordingFrames] = digitalRead(context, n, digitalPin);
 			++recordingFrames;
 			if(recordingFrames >= audioRecorder[0].size()){
 				Bela_requestStop();
@@ -238,8 +257,19 @@ void render(BelaContext *context, void *userData) {
 void cleanup(BelaContext *context, void *userData) {
 	for(auto& i : audioRecorder)
 		i.resize(recordingFrames);
+	digitalPinRecorder.resize(recordingFrames);
 	if(recordAudio == 1){
+		// saving the audio file
 		AudioFileUtilities::write(audioFilename, audioRecorder, context->audioSampleRate);
 		rt_printf("Audio recording saved\n");
+		// saving the marker file
+		std::ofstream markerFile(markerFilename);
+		if(markerFile.is_open()){
+			for(const auto& state : digitalPinRecorder){
+				markerFile << state << "\n";
+			}
+			markerFile.close();
+		}
+		
 	}
 }
