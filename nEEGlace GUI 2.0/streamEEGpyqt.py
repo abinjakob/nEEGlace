@@ -52,7 +52,7 @@ class PlotWindow(QMainWindow):
         
         # ERP plot
         self.bottom_right_layout = QVBoxLayout()
-        self.bottom_right_label = QLabel("ERP PLot")
+        self.bottom_right_label = QLabel("ERP Plot")
         self.bottom_right_label.setStyleSheet("font-size: 15px; color: #979797;")
         self.plot_bottom_right = pg.PlotWidget()
         self.plot_bottom_right.setStyleSheet("border: 2px solid #303030; border-radius: 1px;")
@@ -72,12 +72,15 @@ class PlotWindow(QMainWindow):
 
 # handling the data and plotting
 class DataInletPlotter:
-    def __init__(self, inlets, plt_main, plt_ch7, plotPeriod=5, pullInterval=500):
+    def __init__(self, inlets, plt_main, plt_ch7, eegchans, tidx, plotPeriod=5, pullInterval=500):
         self.inlets = inlets
         self.plt_main = plt_main
         self.plt_ch7 = plt_ch7
         self.plotPeriod = plotPeriod
         self.pullInterval = pullInterval
+        self.eegchans = eegchans
+        self.tidx = tidx
+        
         # store PlotDataItems for each channel
         self.curves = []  
         # initialise PlotDataItem for each channel and add to the plot
@@ -86,10 +89,10 @@ class DataInletPlotter:
                 # create PlotDataItem
                 curve = pg.PlotDataItem()
                 # sound stream
-                if i == 6: 
+                if i == self.tidx: 
                     self.plt_ch7.addItem(curve) 
                 # eeg signal stream 
-                elif i in [0, 1, 2, 3, 4, 5, 7]: 
+                elif i in self.eegchans: 
                     self.plt_main.addItem(curve)  
                 self.curves.append(curve)
                 
@@ -129,14 +132,14 @@ class DataInletPlotter:
         self.plt_ch7.getAxis('left').setStyle(showValues=False)
 
 
-def plotEEG(inlets, plotPeriod=5, updateInterval=60, pullInterval=500):
+def plotEEG(inlets, eegchans, nchan, tidx, trigger_thr, plotPeriod=5, updateInterval=60, pullInterval=500):
     app = QApplication(sys.argv)
     window = PlotWindow()
-    plotter = DataInletPlotter(inlets, window.plot_top, window.plot_bottom_left, plotPeriod, pullInterval)
+    plotter = DataInletPlotter(inlets, window.plot_top, window.plot_bottom_left, eegchans, tidx, plotPeriod, pullInterval)
     
     timers = []
     # ERP plotting 
-    erp_timer = plotERP(inlets[0], srate=250, nchan=8, plot_widget=window.plot_bottom_right)
+    erp_timer = plotERP(inlets[0], srate=250, nchan=8, plot_widget=window.plot_bottom_right, trigger_thr= trigger_thr, eegchans= eegchans, trigger_chan= tidx)
     timers.append(erp_timer)
     # set up scrolling
     updateTimer = QtCore.QTimer()

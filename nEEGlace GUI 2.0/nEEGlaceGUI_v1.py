@@ -12,32 +12,38 @@ python using Tkinter
          abin.jacob@uni-oldenburg.de
 """
 
-# params ---------------------------------------------------
+# SETTINGS ---------------------------------------------------
 
-# root path
+# -- FILES & FOLDERS
+# root path to the folder
 rootpath = r'C:\Users\messung\Desktop\nEEGlace GUI'
-# config file
-configfilename = 'nEEGlaceConfigfile.txt' 
-deviceName = 'Explore_DAAH' 
-#deviceName = 'EXPLORE_DAAH' 
-#deviceName = 'DAAH' 
+# config file name
+configfilename = 'nEEGlaceConfigfile.txt'
 
+
+# -- EEG AMPLIFIER PARAMS
+# enter device name  
+deviceName = 'Explore_DAAH' 
+# enter EEG channels in the stream 
+nbchans = 18
+# channel used for sound triggers
+triggerChan = 19
+
+
+# -- SOUND TRIGGERS PARAMS
 # threshold for sound detection
-soundThresh = 100
-# trigger channel in the stream (Actual Channel Number)
-triggerChan = 8
+soundThresh = 400
 # period to look for sound trigger (in sec)
 look4sound = 5
 
-ani = None
 
+# -- OTHERS
 # common outputs of push2lsl
 errstr1   = 'not recognised as an internal or external command'
 errstr2   = 'DeviceNotFoundError'
 successtr = 'Device info packet has been received. Connection has been established. Streaming...'
 
 # ----------------------------------------------------------
-
 
 
 # libraries
@@ -57,7 +63,7 @@ import matplotlib.pyplot as plt
 from pylsl import StreamInlet, StreamInfo, resolve_stream
 
 # set directory
-os.chdir(r'C:\Users\messung\Desktop\nEEGlace GUI') 
+os.chdir(rootpath) 
 from belaconnect import checkBelaStatus, getBelaConfig, dumpBelaConfig
 from connectLSL import connectstreams
 # from streamEEG import plotEEG
@@ -66,8 +72,30 @@ from streamEEGpyqt import plotEEG
 from computeERP import start_erp, getTrialCount
 from advertiseLSL import LSLestablisher, LSLkiller
 
+
+# --- app frames ---
 # open the config file and fetch data
 configfile = os.path.join(rootpath, configfilename)
+ani = None
+
+# channel index of the sound trigger 
+tidx = triggerChan-1
+# list of EEG chans
+eegchans = list(range(nbchans))
+
+if tidx in eegchans:
+    # remove sound trigger channel from EEG channels 
+    eegchans = [x for x in eegchans if x != tidx]
+else:
+    # adjust total channels 
+    nbchans = nbchans +1
+
+
+
+
+
+
+
 # function to read text file
 def readConfig():
     with open(configfile, 'r') as f:
@@ -120,8 +148,6 @@ def updateBela():
     time.sleep(1)
     writestatus = dumpBelaConfig(values)
     return writestatus
-        
-
 
 
 # system settings 
@@ -261,7 +287,7 @@ def checkThread4LSL(thread4LSL):
         else:
             configdata = fetchConfig()
             srate = streaminfo.nominal_srate()
-            nbchans  = streaminfo.channel_count()
+            # nbchans  = streaminfo.channel_count()
             print(f'Sampling Rate: {srate}')
             
             # updating the variables in the streamer main frame
@@ -437,7 +463,7 @@ def checkThread(connectionThread):
                 print('No inlet found')
             else:           
                 srate   = streaminfo.nominal_srate()
-                nbchans = streaminfo.channel_count()
+                # nbchans = streaminfo.channel_count()
                 print('LSL stream connected')
                 t2_bar.stop()
                 t2_bar.grid_forget()
@@ -531,7 +557,7 @@ def detectSound():
     else:
         # check if trigger present 
         for s in sample:
-            if s[triggerChan-1] > soundThresh:
+            if s[tidx]> soundThresh:
                 print('Sound Detected')
                 sample = None
                 return True
@@ -841,11 +867,7 @@ strL_bar.start()
 
 # button functions
 def on_streameeg():
-    plotEEG(inlet)
-
-def on_erpcalc(): 
-    ani = start_erp(srate, nchan= nbchans, datainlet= inlet[0])
-    # start_erp(srate, nchan= nbchans, datainlet= inlet[0])
+    plotEEG(inlet, eegchans, nbchans, tidx, soundThresh)
     trialcount = 0
     
     def update_trialcount():
@@ -859,9 +881,27 @@ def on_erpcalc():
                 time.sleep(.3)
                 strM_sndstatans.configure(text= '')
             time.sleep(1)
+            
+def on_erpcalc(): 
+    print('Currently this Functionality Not Available')
+    # ani = start_erp(srate, nchan= nbchans, datainlet= inlet[0])
+    # # start_erp(srate, nchan= nbchans, datainlet= inlet[0])
+    # trialcount = 0
+    
+    # def update_trialcount():
+    #     nonlocal trialcount
+    #     while True: 
+    #         newtrialcount = getTrialCount()
+    #         if newtrialcount > trialcount:
+    #             trialcount = newtrialcount
+    #             strM_trlavgans.configure(text= trialcount)
+    #             strM_sndstatans.configure(text= 'Sound Detected')
+    #             time.sleep(.3)
+    #             strM_sndstatans.configure(text= '')
+    #         time.sleep(1)
         
-    threading.Thread(target=update_trialcount, daemon=True).start()
-    plt.show()
+    # threading.Thread(target=update_trialcount, daemon=True).start()
+    # plt.show()
 
 def on_streamquit():
     killstat = LSLkiller(deviceName)
@@ -891,10 +931,10 @@ strM_sfreqtxt.grid(row=4, column=0, columnspan= 5, sticky='w', padx= (40,0), pad
 strM_sfreqans = customtkinter.CTkLabel(streamerFrameMain, text= f'{sfreq} Hz', font=B1)
 strM_sfreqans.grid(row=4, column=2, columnspan= 5, sticky='w', padx= (0,0), pady= (10,0))
 # channel count
-nchan = 8
+nchanx = 8
 strM_nchantxt = customtkinter.CTkLabel(streamerFrameMain, text= 'Number of Channels', font=B1)
 strM_nchantxt.grid(row=5, column=0, columnspan= 5, sticky='w', padx= (40,0), pady= (0,0))
-strM_nchanans = customtkinter.CTkLabel(streamerFrameMain, text= f'{nchan} Channels', font=B1)
+strM_nchanans = customtkinter.CTkLabel(streamerFrameMain, text= f'{nchanx} Channels', font=B1)
 strM_nchanans.grid(row=5, column=2, columnspan= 5, sticky='w', padx= (0,0), pady= (0,0))
 # trigger count
 trgchan = 7

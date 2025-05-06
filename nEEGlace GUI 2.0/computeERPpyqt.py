@@ -14,25 +14,26 @@ import pylsl
 import time 
 
 # Initialize ERP parameters
-def initialize_erp_params(inlet, srate, nchan, plot_widget, epoch_duration=0.8, maxtrials=40, trigger_thr=0.03,
+def initialize_erp_params(inlet, srate, nchan, eegchans, plot_widget, epoch_duration=0.8, maxtrials=40, trigger_thr=0.03,
                           trigger_chan=7, high_pass=0.3, hp_ord=4, channels_to_select=None, channels_to_diff=None):
+    
     global epochs, triggers, buffer, sampling_rate, epoch_samples, trigger_channel, trigger_threshold, hp, hp_order
-    global chan2sel, chan2diff, tidx, max_trials, trial_count, erp_plot_widget
+    global chan2sel, chan2diff, tidx, max_trials, trial_count, erp_plot_widget, nchans
     
     # Initialize parameters
     epochs = []
     triggers = []
-    buffer = np.zeros((int(srate * epoch_duration), nchan-1))
+    nchans = nchan
+    buffer = np.zeros((int(srate * epoch_duration), nchan))
     trial_count = 0
 
     sampling_rate = srate
     epoch_samples = int(srate * epoch_duration)
-    trigger_channel = trigger_chan
     trigger_threshold = trigger_thr
     hp = high_pass
     hp_order = hp_ord
     max_trials = maxtrials
-    tidx = trigger_chan - 1
+    tidx = trigger_chan
     chan2sel = [x - 1 for x in (channels_to_select or [])]
     chan2diff = [x - 1 for x in (channels_to_diff or [])]
     erp_plot_widget = plot_widget
@@ -59,7 +60,7 @@ def process_data(inlet):
         for i in range(epoch_samples):
             timestamp, sample = inlet.pullsample()
             if sample is not None:
-                raw_eeg = [sample[j] for j in range(len(sample)) if j != tidx]
+                raw_eeg = [sample[j] for j in range(nchans) if j != tidx]
                 # filtered_eeg = highpass_filter(raw_eeg, hp, sampling_rate, hp_order)
                 # buffer[i, :] = filtered_eeg
                 buffer[i, :] = raw_eeg
@@ -96,10 +97,9 @@ def data_loop(inlet):
         time.sleep(0.01)
 
 # Start ERP processing and plotting
-def plotERP(inlet, srate, nchan, plot_widget):
-    initialize_erp_params(inlet, srate, nchan, plot_widget)
+def plotERP(inlet, srate, nchan, plot_widget, trigger_thr, trigger_chan, eegchans):
+    initialize_erp_params(inlet, srate, nchan, eegchans, plot_widget, trigger_thr= trigger_thr, trigger_chan= trigger_chan)
 
-    
 
     data_thread = threading.Thread(target=data_loop, args=(inlet,), daemon=True)
     data_thread.start()
